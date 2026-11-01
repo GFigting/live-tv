@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# 运行产物
+output/*
+*.log
+# 只保留最终订阅清单，便于在私有仓里存档最近一次结果
+!output/live.m3u
+.pytest_cache/
+
+# 本地参考材料
+chrome-stream-plugin.zip
+源1.m3u
+源2.m3u
+
+# 本地覆盖配置
+config/sources.local.yaml
+
+# 编辑器
+.vscode/
+.idea/

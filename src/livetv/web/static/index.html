@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>live-tv 控制台</title>
+<meta name="theme-color" content="#0e1116">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e1116'/%3E%3Crect x='9' y='15' width='46' height='31' rx='6' fill='none' stroke='%233ec6a8' stroke-width='4'/%3E%3Cpath d='M27 25l14 8-14 8z' fill='%233ec6a8'/%3E%3Cpath d='M23 54h18' stroke='%233ec6a8' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0e1116;
+  --panel: #161b23;
+  --panel-2: #1d242e;
+  --line: #2a323d;
+  --text: #e6edf3;
+  --muted: #8b97a6;
+  --accent: #3ec6a8;
+  --accent-dim: #1f5c50;
+  --warn: #e0a04a;
+  --bad: #d96a6a;
+  --radius: 12px;
+  --radius-sm: 6px;
+  --control-h: 34px;
+  --gap: 14px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 24px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 5;
+  background: rgba(14, 17, 22, .82);
+  backdrop-filter: blur(10px);
+}
+header h1 { margin: 0; font-size: 18px; letter-spacing: .5px; }
+header .sub { color: var(--muted); font-size: 12px; }
+.pill {
+  margin-left: auto; padding: 4px 12px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted); font-size: 12px;
+  transition: color .15s ease, border-color .15s ease;
+}
+.pill.running { color: var(--accent); border-color: var(--accent-dim); }
+.pill.done { color: var(--accent); border-color: var(--accent-dim); }
+.pill.failed { color: var(--bad); border-color: #5c2f2f; }
+main { padding: 18px 24px 48px; max-width: 1320px; margin: 0 auto; }
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px 18px; margin-bottom: var(--gap);
+}
+/* 标题左侧竖条给出层级，避免所有卡片都是同权重的平铺色块 */
+.card h2 {
+  margin: 0 0 14px; padding-left: 9px; position: relative;
+  font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .8px;
+}
+.card h2::before {
+  content: ""; position: absolute; left: 0; top: 2px; bottom: 2px;
+  width: 3px; border-radius: 2px; background: var(--accent-dim);
+}
+/* 运行控制与源清单并排，源清单条目少不该独占一行 */
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--gap); margin-bottom: var(--gap); }
+.grid-2 .card { margin-bottom: 0; }
+@media (max-width: 1024px) { .grid-2 { grid-template-columns: 1fr; } }
+.controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { color: var(--muted); font-size: 12px; }
+/* 输入与按钮统一高度与圆角，避免各区块控件尺寸参差 */
+.field input[type=number], .toolbar input:not([type=checkbox]) {
+  height: var(--control-h); padding: 0 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+  font-variant-numeric: tabular-nums;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field input[type=number] { width: 110px; }
+input:focus-visible { outline: none; border-color: var(--accent-dim); box-shadow: 0 0 0 3px rgba(62, 198, 168, .16); }
+/* 复选框单独给尺寸，否则会被 flex 容器拉伸成方块 */
+input[type=checkbox] { width: 15px; height: 15px; margin: 0; flex: none; accent-color: var(--accent); cursor: pointer; }
+.check { display: flex; align-items: center; gap: 6px; padding-bottom: 8px; }
+.check input { accent-color: var(--accent); }
+button {
+  height: var(--control-h); padding: 0 16px; border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-dim); background: var(--accent-dim); color: var(--text);
+  cursor: pointer; font-size: 13px;
+  transition: background .15s ease, border-color .15s ease, transform .06s ease;
+}
+button:hover:not(:disabled) { background: #276e60; border-color: #2f8273; }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.notice { margin-top: 10px; font-size: 12px; color: var(--warn); min-height: 16px; }
+.shortcut-hint { margin-top: 18px; color: var(--muted); font-size: 12px; }
+/* 失败清单：左边频道名与原因标签，地址单独一行便于复制排查 */
+.failure-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.reason-chip {
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--muted); font-size: 11px;
+}
+.failure-row { padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, .04); }
+.failure-row .name { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.reason-tag {
+  padding: 1px 6px; border-radius: 4px; background: #3a2626; color: #e09a9a;
+  font-size: 11px;
+}
+.failure-row .urls { margin-top: 2px; color: var(--muted); font-size: 11px; word-break: break-all; line-height: 1.6; }
+.failure-row .urls span { display: block; }
+kbd {
+  display: inline-block; min-width: 18px; padding: 1px 5px; margin: 0 2px;
+  border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px;
+  background: var(--panel-2); color: var(--text); font-family: inherit; font-size: 11px; text-align: center;
+}
+.progress { margin-top: 14px; }
+.progress .row { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+.bar { margin-top: 6px; height: 6px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.bar > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s ease; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 10px; margin-bottom: var(--gap); }
+.stat {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 16px; transition: border-color .15s ease;
+}
+.stat:hover { border-color: #37424f; }
+.stat .k { color: var(--muted); font-size: 12px; letter-spacing: .3px; }
+.stat .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.stat .v.small { font-size: 14px; font-weight: 400; color: var(--muted); }
+.groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; }
+.sources { display: flex; flex-direction: column; gap: 6px; }
+.source-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; background: var(--panel-2); font-size: 13px; transition: background .15s ease; }
+.source-row:hover { background: #222b36; }
+.source-row .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.source-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-row .url {
+  color: var(--muted); font-size: 11px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.source-add { display: flex; gap: 8px; margin-top: 10px; }
+.source-add input { flex: 1; min-width: 0; height: 30px; padding: 0 9px; border-radius: var(--radius-sm);
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-size: 12px; }
+.source-add input:first-child { flex: 0 0 132px; }
+.source-add button { height: 30px; padding: 0 12px; font-size: 12px; white-space: nowrap; }
+.source-row .state { font-size: 12px; color: var(--muted); }
+.source-row button { height: 26px; padding: 0 10px; font-size: 12px; border-radius: 5px; cursor: pointer; border: 1px solid var(--accent-dim); background: transparent; color: var(--muted); }
+.source-row.on button { background: var(--accent-dim); color: var(--text); }
+.source-row button:disabled { opacity: .5; cursor: not-allowed; }
+.group-row {
+  position: relative; overflow: hidden; cursor: pointer;
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel-2);
+  transition: border-color .15s ease, transform .15s ease;
+}
+/* 整块按占比铺一层淡色背景，避免小占比只剩一条看不清的细线 */
+.group-row::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: var(--p, 0%);
+  background: var(--c, var(--accent)); opacity: .07; pointer-events: none;
+  transition: width .3s ease;
+}
+.group-row:hover { border-color: var(--c, var(--accent-dim)); transform: translateY(-1px); }
+.group-row.active { border-color: var(--c, var(--accent)); box-shadow: inset 0 0 0 1px var(--c, var(--accent)); }
+.group-row .head { display: flex; align-items: center; gap: 8px; }
+.group-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--accent)); flex: none; }
+.group-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.group-row .count { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--c, var(--text)); }
+.group-row .track { height: 4px; background: #0f141a; border-radius: 2px; overflow: hidden; }
+.group-row .track > span { display: block; height: 100%; background: var(--c, var(--accent)); opacity: .85; }
+.group-row .share { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.group-row.zero { opacity: .45; }
+.group-row.zero .track { visibility: hidden; }
+.group-summary b { color: var(--text); font-weight: 600; }
+.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.toolbar input:not([type=checkbox]) { flex: 1; min-width: 200px; }
+.toolbar .hint { color: var(--muted); font-size: 12px; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--text); }
+th.sortable.sorted { color: var(--accent); }
+th.sortable.sorted::after { content: " ▼"; font-size: 9px; }
+th.sortable.sorted.asc::after { content: " ▲"; }
+tbody tr:hover td { background: rgba(255, 255, 255, .025); }
+.fluency .meter > span.mid { background: var(--warn); }
+.fluency .meter > span.low { background: var(--bad); }
+.stat .v.good { color: var(--accent); }
+.stat .v.mid { color: var(--warn); }
+.stat .v.bad { color: var(--bad); }
+.pager { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-top: 10px; }
+button.ghost {
+  height: 30px; padding: 0 12px; font-size: 13px; color: var(--muted);
+  background: transparent; border-color: var(--line);
+}
+button.ghost:hover { color: var(--text); border-color: var(--accent-dim); background: var(--panel-2); }
+.tag { display: inline-block; margin: 1px 4px 1px 0; padding: 0 6px; border-radius: 4px;
+  background: var(--panel-2); color: var(--muted); font-size: 11px; white-space: nowrap; }
+/* 横向滚动时冻结选择、频道、分组三列，关键信息始终可见 */
+th.pick, td.pick { width: 34px; }
+th.pick, td.pick, th.name-col, td.name-col, th.group-col, td.group-col {
+  position: sticky; background: var(--panel); z-index: 1;
+}
+th.pick, td.pick { left: 0; }
+th.name-col, td.name-col { left: 34px; width: 240px; }
+th.group-col, td.group-col { left: 274px; width: 130px; max-width: 130px; overflow: hidden; }
+th.group-col, td.group-col { box-shadow: 8px 0 12px -8px rgba(0, 0, 0, .5); }
+thead th.pick, thead th.name-col, thead th.group-col { z-index: 3; }
+td details summary { white-space: nowrap; }
+/* 窄屏收起次要列（码率、协议）并压缩内边距，尽量不出现横向滚动 */
+@media (max-width: 1100px) {
+  th:nth-child(7), td:nth-child(7), th:nth-child(8), td:nth-child(8) { display: none; }
+  table th, table td { padding-left: 6px; padding-right: 6px; }
+  th.name-col, td.name-col { width: 200px; max-width: 200px; }
+  td.name-col .name-text, td.name-col .sub .plain { max-width: 180px; }
+  th.group-col, td.group-col { left: 268px; width: 118px; max-width: 118px; }
+}
+/* 表头吸顶：表格自带滚动容器，翻到几百行后仍能看到列名 */
+.table-wrap { overflow: auto; max-height: calc(100vh - 260px); border-radius: 8px; }
+thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td .sub { color: var(--muted); font-size: 11px; }
+.fluency { display: inline-flex; align-items: center; gap: 6px; }
+.fluency .meter { width: 48px; height: 5px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+.fluency .meter > span { display: block; height: 100%; background: var(--accent); }
+.url-list { margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; }
+.url-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 3px 0; word-break: break-all; }
+.url-list .url-text { flex: 1; min-width: 0; }
+.url-list .ok { color: var(--accent); }
+.url-list .failed { color: var(--bad); }
+.url-list .skipped { color: var(--muted); }
+/* 状态四色：可用绿、低流畅黄、失败红、未测灰，行首同色竖条便于扫视 */
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+.status .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: currentColor; }
+.status.ok { color: var(--accent); }
+.status.weak { color: var(--warn); }
+.status.failed { color: var(--bad); }
+.status.skipped { color: var(--muted); }
+tr.row-failed td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+tr.row-weak td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+tr.row-skipped td:first-child { box-shadow: inset 3px 0 0 #4b5563; }
+button.mini {
+  height: 20px; padding: 0 7px; font-size: 11px; border-radius: 4px; flex: none;
+  border: 1px solid var(--line); background: transparent; color: var(--muted);
+}
+button.mini:hover:not(:disabled) { color: var(--text); border-color: var(--accent-dim); background: var(--panel); }
+button.mini.play-mini { color: var(--accent); border-color: var(--accent-dim); }
+button.mini:disabled { opacity: .4; cursor: not-allowed; }
+.retest-bar { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; }
+select.status-select {
+  height: var(--control-h); padding: 0 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-size: 13px;
+}
+button.try { color: var(--warn); border-color: #6a4a22; }
+button.try:hover { background: #4a3418; color: var(--text); }
+/* 频道名过长会把表格撑宽、把「播放」挤出可视区，这里截断并靠悬停看全文 */
+td.name-col { max-width: 240px; }
+td.name-col .name-text, td.name-col .sub .plain {
+  display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.group-row .retest {
+  position: absolute; right: 8px; bottom: 6px; height: 22px; padding: 0 8px;
+  font-size: 11px; border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+  opacity: 0; transition: opacity .15s ease;
+}
+.group-row:hover .retest { opacity: 1; }
+.group-row .retest:hover { color: var(--text); border-color: var(--accent-dim); }
+summary { cursor: pointer; color: var(--accent); }
+.empty { color: var(--muted); font-size: 13px; }
+.downloads { display: flex; flex-wrap: wrap; gap: 10px; }
+/* 导出：分组卡片与频道行可勾选 */
+th.pick, td.pick { width: 34px; text-align: center; }
+td.pick input, .group-pick { width: 15px; height: 15px; accent-color: #7aa2f7; cursor: pointer; }
+td.pick input:disabled { opacity: .3; cursor: not-allowed; }
+.group-row { position: relative; }
+.group-pick { position: absolute; top: 8px; right: 8px; z-index: 2; }
+.export-presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.preset-chip {
+  padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: transparent; color: var(--text); font: inherit; font-size: 12px; cursor: pointer;
+}
+.preset-chip:hover { border-color: var(--accent-dim); color: var(--accent); }
+.export-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.export-bar .hint { flex: 1; }
+.downloads a {
+  color: var(--text); text-decoration: none; padding: 7px 14px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);
+}
+.downloads a:hover { border-color: var(--accent-dim); }
+.failures { color: var(--muted); font-size: 13px; line-height: 1.8; word-break: break-all; }
+button.play {
+  height: 26px; padding: 0 12px; font-size: 12px; color: var(--accent);
+  background: transparent; border-color: var(--accent-dim); white-space: nowrap;
+}
+button.play:hover { background: var(--accent-dim); color: var(--text); }
+.player {
+  position: fixed; inset: 0; z-index: 20; padding: 24px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 9, 12, .84);
+}
+.player.hidden { display: none; }
+.player-panel {
+  width: min(960px, 100%); display: flex; flex-direction: column; gap: 10px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 16px 16px;
+}
+.player-head { display: flex; align-items: center; gap: 12px; }
+.player-title { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-head button { margin-left: auto; }
+.player video { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
+.player-error { color: var(--warn); font-size: 12px; min-height: 16px; word-break: break-all; }
+.hidden { display: none; }
+a.plain { color: var(--accent); text-decoration: none; }
+a.plain:hover { text-decoration: underline; }
+@media (max-width: 720px) {
+  header { padding: 12px 14px; }
+  main { padding: 14px 12px 32px; }
+  .card { padding: 14px; }
+  .table-wrap { max-height: none; }
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #2f3844; border-radius: 6px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: #3a4552; }
+::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>live-tv</h1>
+    <div class="sub">本地直播源采集与检测</div>
+  </div>
+  <div id="status" class="pill">待运行</div>
+</header>
+<main>
+  <div class="grid-2">
+  <section class="card">
+    <h2>运行检测</h2>
+    <div class="controls">
+      <div class="field">
+        <label for="f-limit">数量上限</label>
+        <input id="f-limit" type="number" min="1" max="5000" placeholder="全部">
+      </div>
+      <div class="field">
+        <label for="f-concurrency">并发</label>
+        <input id="f-concurrency" type="number" min="1" max="128" placeholder="按配置">
+      </div>
+      <div class="field">
+        <label for="f-min-fluency">最低流畅度</label>
+        <input id="f-min-fluency" type="number" min="0" max="100" step="1" placeholder="按配置">
+      </div>
+      <div class="field">
+        <label for="f-max-per-channel">每频道条数</label>
+        <input id="f-max-per-channel" type="number" min="1" max="10" placeholder="按配置">
+      </div>
+      <div class="check">
+        <input id="f-speed" type="checkbox" checked>
+        <label for="f-speed">测速检测</label>
+      </div>
+      <button id="run-btn">开始检测</button>
+    </div>
+    <div id="notice" class="notice"></div>
+    <div id="progress" class="progress hidden">
+      <div class="row"><span id="stage">读取源清单</span><span id="count"></span></div>
+      <div class="bar"><span id="bar-fill"></span></div>
+    </div>
+    <div class="shortcut-hint">快捷键：<kbd>/</kbd> 聚焦筛选 · <kbd>Esc</kbd> 清除筛选或退出分组</div>
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <h2 style="margin:0">源清单</h2>
+      <span id="source-summary" class="hint"></span>
+    </div>
+    <div id="sources" class="sources"><div class="empty">加载中</div></div>
+    <div class="source-add">
+      <input id="source-name" placeholder="源名称" maxlength="60">
+      <input id="source-url" placeholder="M3U 地址（http:// 或 https://）">
+      <button id="source-add-btn">添加</button>
+    </div>
+  </section>
+  </div>
+
+  <section id="stats" class="cards"></section>
+
+  <section class="card">
+    <div class="toolbar">
+      <h2 style="margin:0">分组分布</h2>
+      <span id="group-summary" class="hint group-summary"></span>
+    </div>
+    <div id="groups" class="groups"><div class="empty">暂无数据</div></div>
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <h2 style="margin:0">频道</h2>
+      <input id="filter" placeholder="按频道名、分组或原始分类筛选">
+      <select id="status-filter" class="status-select">
+        <option value="">全部状态</option>
+        <option value="ok">仅可用</option>
+        <option value="weak">仅低流畅</option>
+        <option value="failed">仅失败</option>
+        <option value="skipped">仅未测</option>
+      </select>
+      <button id="retest-group" class="ghost hidden">复测当前分组</button>
+      <button id="retest-failed" class="ghost">复测失败项</button>
+      <button id="retest-page" class="ghost">复测本页</button>
+      <span id="channel-count" class="hint"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="pick"><input type="checkbox" id="select-page" title="全选本页可用频道"></th>
+            <th class="name-col">频道</th><th class="group-col">分组</th><th>状态</th>
+            <th class="sortable" data-sort="fluency">流畅度</th>
+            <th class="sortable" data-sort="latency_ms">延迟</th>
+            <th class="sortable" data-sort="bitrate">码率</th>
+            <th>协议</th><th>播放</th><th>候选</th>
+          </tr>
+        </thead>
+        <tbody id="channel-rows"></tbody>
+      </table>
+    </div>
+    <div id="channel-empty" class="empty">暂无数据</div>
+    <div class="sub" style="margin-top:8px">
+      复测只刷新页面结果，不改写 M3U 与报告文件；需要在产物中生效请重新运行检测。
+    </div>
+    <div class="pager">
+      <button id="prev-page" class="ghost">上一页</button>
+      <span id="page-info" class="hint"></span>
+      <button id="next-page" class="ghost">下一页</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>失败源</h2>
+    <div id="failures" class="failures">暂无</div>
+  </section>
+
+  <section class="card">
+    <h2>导出</h2>
+    <div class="sub">勾选下方分组或频道，或直接用预设一键导出；只导出有可用地址的频道。</div>
+    <div id="export-presets" class="export-presets"></div>
+    <div id="export-bar" class="export-bar">
+      <span id="export-count" class="hint">已选 0 个频道</span>
+      <button id="export-selected" class="ghost" disabled>导出选中</button>
+      <button id="export-clear" class="ghost" disabled>清空选择</button>
+    </div>
+    <h2 style="margin-top:22px">产物下载</h2>
+    <div id="downloads" class="downloads"><div class="empty">暂无产物</div></div>
+  </section>
+</main>
+
+<div id="player" class="player hidden">
+  <div class="player-panel">
+    <div class="player-head">
+      <div id="player-title" class="player-title"></div>
+      <button id="player-close" class="ghost">关闭</button>
+    </div>
+    <video id="player-video" controls autoplay playsinline></video>
+    <div id="player-error" class="player-error"></div>
+  </div>
+</div>
+
+<script src="/static/lib/hls.min.js"></script>
+<script>
+const STAGE_LABELS = { sources: "读取源清单", check: "检测直播源", output: "写入产物", done: "完成" };
+const STATUS_LABELS = { idle: "待运行", running: "运行中", done: "已完成", failed: "失败" };
+const DOWNLOAD_LABELS = { m3u: "完整清单", ipv4: "IPv4 清单", ipv6: "IPv6 清单" };
+// 固定大类顺序与后端常量保持一致，超出顺序的分类排在最后
+const GROUP_ORDER = ["央视", "卫视", "地方", "港澳台", "国际", "新闻", "影视", "体育", "少儿", "纪录", "音乐", "其他"];
+const PAGE_SIZE = 200;
+const POLL_INTERVAL = 1200;
+
+let report = null;
+let timer = null;
+let lastStatus = "idle";
+let lastRetestStatus = "idle";
+let retestPending = false;
+let activeGroup = "";
+let page = 1;
+let sortKey = "";
+let sortDir = -1;
+let hls = null;
+let busy = false;
+let visibleKeys = [];
+const selected = new Set();
+let lastPageAvailable = [];
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[ch]));
+}
+
+function baseName(path) {
+  return String(path || "").split(/[\\/]/).pop();
+}
+
+function fmtMs(value) {
+  return value == null ? "—" : Math.round(value) + " ms";
+}
+
+function fmtBitrate(value) {
+  if (value == null) return "—";
+  if (value >= 1000) return (value / 1000).toFixed(0) + " kbps";
+  return value + " bps";
+}
+
+function stageLabel(stage) {
+  return STAGE_LABELS[stage] || "准备中";
+}
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "请求失败：" + response.status);
+  return payload;
+}
+
+async function refresh() {
+  let snapshot;
+  try {
+    snapshot = await api("/api/run");
+  } catch (error) {
+    setNotice(error.message);
+    return;
+  }
+  const retest = snapshot.retest || {};
+  const retestStatus = retest.status || "idle";
+  const wasRunning = lastRetestStatus === "running";
+  lastRetestStatus = retestStatus;
+  renderStatus(snapshot);
+  // 运行状态变化时同步源清单，让「检测进行中不可修改」及时反映到按钮上
+  if (snapshot.status !== lastStatus) loadSources();
+  // 快速失败的复测可能在下一次轮询前就结束，用 retestPending 兜住这种瞬态
+  const retestFinished = (retestPending || wasRunning) && retestStatus !== "running";
+  retestPending = false;
+  if (snapshot.has_report && (!report || retestFinished)) {
+    await loadReport();
+    if (retestFinished && retestStatus === "done") {
+      setNotice(`复测完成：更新 ${retest.channels || 0} 个频道、${retest.urls || 0} 条地址`);
+    } else if (retestFinished) {
+      setNotice("复测失败：" + (retest.last_error || "未知错误"));
+    }
+  }
+  renderProgress(snapshot);
+  if (snapshot.busy) {
+    schedule();
+  } else if (lastStatus === "running") {
+    await loadReport();
+  }
+  lastStatus = snapshot.status;
+}
+
+function schedule() {
+  clearTimeout(timer);
+  timer = setTimeout(refresh, POLL_INTERVAL);
+}
+
+async function loadReport() {
+  try {
+    report = await api("/api/report");
+    renderAll();
+  } catch (error) {
+    setNotice(error.message);
+  }
+}
+
+function renderStatus(snapshot) {
+  const retest = snapshot.retest || {};
+  const pill = document.getElementById("status");
+  if (retest.status === "running") {
+    pill.textContent = "复测中";
+    pill.className = "pill running";
+  } else {
+    pill.textContent = STATUS_LABELS[snapshot.status] || snapshot.status;
+    pill.className = "pill " + snapshot.status;
+  }
+  const button = document.getElementById("run-btn");
+  button.disabled = !!snapshot.busy;
+  button.textContent = retest.status === "running"
+    ? "复测中…"
+    : snapshot.status === "running" ? "检测中…" : "开始检测";
+  const progress = document.getElementById("progress");
+  if (snapshot.busy) {
+    progress.classList.remove("hidden");
+  } else {
+    progress.classList.add("hidden");
+  }
+  if (snapshot.status === "failed" && snapshot.last_error) {
+    setNotice("运行失败：" + snapshot.last_error);
+  }
+  // 忙闲状态变化时重绘表格与分组，同步按钮的禁用态
+  const wasBusy = busy;
+  busy = !!snapshot.busy;
+  if (wasBusy !== busy && report) {
+    renderGroups();
+    renderChannels();
+  }
+}
+
+function renderProgress(snapshot) {
+  const retest = snapshot.retest || {};
+  const retesting = retest.status === "running";
+  const progress = (retesting ? retest.progress : snapshot.progress) || { done: 0, total: 0 };
+  document.getElementById("stage").textContent =
+    retesting ? "复测直播源" : stageLabel(snapshot.stage);
+  document.getElementById("count").textContent =
+    progress.total > 0 ? progress.done + " / " + progress.total : "";
+  const fill = document.getElementById("bar-fill");
+  const percent = progress.total > 0 ? Math.min(100, (progress.done / progress.total) * 100) : 0;
+  fill.style.width = percent.toFixed(1) + "%";
+}
+
+function setNotice(message) {
+  document.getElementById("notice").textContent = message || "";
+}
+
+function renderAll() {
+  renderStats();
+  renderGroups();
+  renderChannels();
+  renderFailures();
+  renderDownloads();
+}
+
+// 统计卡里只留「日-时:分」，完整时间在窄卡片里会换行
+function fmtTime(iso) {
+  const matched = String(iso || "").match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
+  return matched ? `${matched[1].slice(5)} ${matched[2]}:${matched[3]}` : "—";
+}
+
+function renderStats() {
+  const stats = (report && report.stats) || {};
+  const rate = stats.checked_urls ? (stats.ok_urls / stats.checked_urls) * 100 : null;
+  // 可用率按水位着色：低于 20% 说明当前网络几乎连不上这些源
+  const tone = rate == null ? "" : rate >= 50 ? " good" : rate >= 20 ? " mid" : " bad";
+  const items = [
+    { k: "解析频道", v: stats.parsed_channels ?? 0 },
+    { k: "去重频道", v: stats.unique_channels ?? 0 },
+    { k: "检测 URL", v: stats.checked_urls ?? 0 },
+    { k: "可用 URL", v: stats.ok_urls ?? 0 },
+    { k: "可用率", v: rate == null ? "—" : rate.toFixed(1) + "%", tone },
+    { k: "输出频道", v: stats.output_channels ?? 0 },
+    { k: "生成时间", v: fmtTime(report && report.generated_at), small: true },
+  ];
+  const container = document.getElementById("stats");
+  container.innerHTML = items.map((item) => `
+    <div class="stat">
+      <div class="k">${esc(item.k)}</div>
+      <div class="v${item.small ? " small" : ""}${item.tone || ""}">${esc(item.v)}</div>
+    </div>`).join("");
+}
+
+// 每个大类固定一种颜色（低饱和，与页面整体冷色调协调），扫视时不必逐行读文字
+const GROUP_COLORS = {
+  央视: "#f7768e", 卫视: "#ff9e64", 地方: "#e0af68", 港澳台: "#73daca",
+  国际: "#7aa2f7", 新闻: "#9ece6a", 影视: "#bb9af7", 体育: "#f78fb3",
+  少儿: "#c3f0ca", 纪录: "#7dcfff", 音乐: "#d67aff", 其他: "#9aa5b1",
+};
+
+function renderGroups() {
+  const container = document.getElementById("groups");
+  const summary = document.getElementById("group-summary");
+  const groups = (report && report.groups) || {};
+  if (activeGroup && !groups[activeGroup]) activeGroup = "";
+  const extra = Object.keys(groups)
+    .filter((name) => !GROUP_ORDER.includes(name))
+    .sort((a, b) => groups[b] - groups[a]);
+  // 固定大类始终全部展示，没有频道的也保留，避免看起来「缺分组」
+  const names = report ? GROUP_ORDER.concat(extra) : [];
+  if (!names.length) {
+    container.innerHTML = '<div class="empty">暂无数据</div>';
+    summary.textContent = "";
+    return;
+  }
+  const total = names.reduce((sum, name) => sum + (groups[name] || 0), 0);
+  container.innerHTML = names.map((name) => {
+    const count = groups[name] || 0;
+    const percent = total ? (count / total * 100) : 0;
+    const color = GROUP_COLORS[name] || GROUP_COLORS["其他"];
+    const active = name === activeGroup ? " active" : "";
+    const zero = count ? "" : " zero";
+    return `
+    <div class="group-row${active}${zero}" data-group="${esc(name)}"
+         style="--c:${color};--p:${percent.toFixed(1)}%">
+      <div class="head">
+        <span class="dot"></span>
+        <span class="name" title="${esc(name)}">${esc(name)}</span>
+        <span class="count">${count}</span>
+      </div>
+      <div class="track"><span style="width:${percent.toFixed(1)}%;min-width:${count ? 2 : 0}px"></span></div>
+      <div class="share">${percent ? percent.toFixed(1) + "%" : "0%"}</div>
+      ${count ? `<input type="checkbox" class="group-pick" data-group="${esc(name)}"
+        title="勾选该分组全部可用频道" ${groupAllPicked(name) ? "checked" : ""}>
+      <button class="retest" data-group="${esc(name)}" ${busy ? "disabled" : ""}>复测</button>` : ""}
+    </div>`;
+  }).join("");
+  summary.innerHTML = activeGroup
+    ? `已筛选 <b>${esc(activeGroup)}</b> · ${groups[activeGroup] || 0} 个频道，再点一次取消`
+    : `${GROUP_ORDER.length} 类 · 共 <b>${total}</b> 个频道`;
+  container.querySelectorAll(".group-row").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      const name = row.dataset.group;
+      // 复测按钮不参与筛选切换
+      const retestButton = event.target.closest(".retest");
+      if (retestButton) {
+        event.stopPropagation();
+        retestGroup(name);
+        return;
+      }
+      // 导出勾选框只改变选择，不切换筛选
+      if (event.target.closest(".group-pick")) return;
+      activeGroup = activeGroup === name ? "" : name;
+      page = 1;
+      renderGroups();
+      renderChannels();
+    });
+  });
+}
+
+const STATE_LABELS = { ok: "可用", weak: "低流畅", failed: "失败", skipped: "未测" };
+
+// 状态只由检测结果推导，避免把「这次没连上」当成永久不可用
+function channelState(item) {
+  const urls = item.urls || [];
+  if (!urls.length) return "skipped";
+  if (urls.every((entry) => entry.status === "skipped")) return "skipped";
+  if (!item.best_url) return "failed";
+  return Number(item.fluency || 0) >= 40 ? "ok" : "weak";
+}
+
+function fmtClock(iso) {
+  const matched = String(iso || "").match(/T(\d{2}:\d{2})/);
+  return matched ? matched[1] : "";
+}
+
+function channelRows(item) {
+  const state = channelState(item);
+  const fluency = Number(item.fluency || 0);
+  const urls = item.urls || [];
+  const best = item.best_url
+    ? `<a class="plain" href="${esc(item.best_url)}" target="_blank" rel="noreferrer">${esc(baseName(item.best_url))}</a>`
+    : `<span class="sub">${esc(item.best_url || "不可用")}</span>`;
+  const candidates = urls.map((entry) => {
+    const cls = entry.status === "ok" ? "ok" : entry.status === "skipped" ? "skipped" : "failed";
+    const detail = entry.status === "ok"
+      ? `可用 · 流畅 ${Math.round(entry.fluency || 0)} · ${fmtMs(entry.latency_ms)}`
+      : entry.status === "skipped"
+        ? "未检测"
+        : `失败${entry.reason ? " · " + entry.reason : ""}`;
+    const retested = entry.retested_at ? " · 已复测" : "";
+    return `<li><span class="${cls}">${esc(entry.status)}</span>
+      <span class="url-text">${esc(detail + retested)}<br>${esc(entry.url)}</span>
+      <button class="mini play-mini" data-url="${esc(entry.url)}" data-name="${esc(item.name)}">播放</button>
+      <button class="mini retest-url" data-key="${esc(item.key)}" data-url="${esc(entry.url)}"
+        ${busy ? "disabled" : ""}>复测</button></li>`;
+  }).join("");
+  // 没有可用地址时也能用首个候选试播，检测失败不等于播放必然失败
+  const firstUrl = urls.length ? urls[0].url : "";
+  const play = item.best_url
+    ? `<button class="play" data-url="${esc(item.best_url)}" data-name="${esc(item.name)}">播放</button>`
+    : firstUrl
+      ? `<button class="play try" data-url="${esc(firstUrl)}" data-name="${esc(item.name)}">试播</button>`
+      : `<span class="sub">—</span>`;
+  const latency = item.latency_ms == null
+    ? "—"
+    : `${Math.round(item.latency_ms)} ms<div class="sub">清单 ${fmtMs(item.playlist_latency_ms)} · 切片 ${fmtMs(item.segment_latency_ms)}</div>`;
+  const tags = (item.group_tags || []).map((tag) => `<span class="tag">${esc(tag)}</span>`).join("");
+  const retestedAt = item.retested_at
+    ? `<div class="sub">复测 ${esc(fmtClock(item.retested_at))}</div>`
+    : "";
+  return `
+    <tr class="row-${state}">
+      <td class="pick"><input type="checkbox" class="pick-channel" data-key="${esc(item.key)}"
+        ${item.best_url ? "" : "disabled"} ${selected.has(item.key) ? "checked" : ""}></td>
+      <td class="name-col"><span class="name-text" title="${esc(item.name)}">${esc(item.name)}</span><div class="sub">${best}</div></td>
+      <td class="group-col">${esc(item.group)}${tags ? `<div class="sub">${tags}</div>` : ""}</td>
+      <td><span class="status ${state}"><span class="dot"></span>${STATE_LABELS[state]}</span>${retestedAt}</td>
+      <td><span class="fluency">
+        <span class="meter"><span class="${fluency >= 70 ? "" : fluency >= 40 ? "mid" : "low"}"
+          style="width:${Math.min(100, fluency).toFixed(0)}%"></span></span>
+        <span class="num">${Math.round(fluency)}</span>
+      </span></td>
+      <td class="num">${latency}</td>
+      <td class="num">${fmtBitrate(item.bitrate)}</td>
+      <td class="num">${esc(item.ip_family || "—")}</td>
+      <td>${play}</td>
+      <td><details><summary>${urls.length} 条</summary>
+        <div class="retest-bar">
+          <button class="mini retest-channel" data-key="${esc(item.key)}" ${busy ? "disabled" : ""}>复测全部</button>
+        </div>
+        <ul class="url-list">${candidates}</ul></details></td>
+    </tr>`;
+}
+
+function renderChannels() {
+  const rows = document.getElementById("channel-rows");
+  const empty = document.getElementById("channel-empty");
+  const groupButton = document.getElementById("retest-group");
+  groupButton.classList.toggle("hidden", !activeGroup);
+  groupButton.disabled = busy;
+  document.getElementById("retest-failed").disabled = busy;
+  document.getElementById("retest-page").disabled = busy;
+  if (!report) {
+    rows.innerHTML = "";
+    empty.classList.remove("hidden");
+    document.getElementById("channel-count").textContent = "";
+    document.getElementById("page-info").textContent = "";
+    document.getElementById("prev-page").disabled = true;
+    document.getElementById("next-page").disabled = true;
+    visibleKeys = [];
+    return;
+  }
+  const keyword = (document.getElementById("filter").value || "").trim().toLowerCase();
+  const statusFilter = document.getElementById("status-filter").value;
+  let channels = (report.channels || []).filter((item) => {
+    if (activeGroup && item.group !== activeGroup) return false;
+    if (statusFilter && channelState(item) !== statusFilter) return false;
+    if (!keyword) return true;
+    const haystack = [item.name, item.group, ...(item.group_tags || [])].join(" ").toLowerCase();
+    return haystack.includes(keyword);
+  });
+  if (sortKey) channels = channels.slice().sort(compareChannels);
+  const pages = Math.max(1, Math.ceil(channels.length / PAGE_SIZE));
+  page = Math.min(Math.max(1, page), pages);
+  const start = (page - 1) * PAGE_SIZE;
+  const visible = channels.slice(start, start + PAGE_SIZE);
+  rows.innerHTML = visible.map(channelRows).join("");
+  visibleKeys = visible.map((item) => item.key);
+  lastPageAvailable = visible.filter((item) => item.best_url).map((item) => item.key);
+  syncSelectPage();
+  empty.classList.toggle("hidden", visible.length > 0);
+  const scope = activeGroup ? `「${activeGroup}」` : "";
+  const stateText = statusFilter ? `${STATE_LABELS[statusFilter]} ` : "";
+  document.getElementById("channel-count").textContent =
+    "共 " + (report.channels || []).length + " 个频道，" + scope + stateText + "筛选出 " + channels.length + " 个";
+  document.getElementById("page-info").textContent =
+    channels.length ? `${page} / ${pages}（${start + 1}-${start + visible.length}）` : "";
+  document.getElementById("prev-page").disabled = page <= 1;
+  document.getElementById("next-page").disabled = page >= pages;
+}
+
+function compareChannels(a, b) {
+  const av = a[sortKey];
+  const bv = b[sortKey];
+  // 空值始终沉底，不因为升降序跑到最前
+  if (av == null && bv == null) return 0;
+  if (av == null) return 1;
+  if (bv == null) return -1;
+  return (av - bv) * sortDir;
+}
+
+function updateSortHeaders() {
+  document.querySelectorAll("th.sortable").forEach((th) => {
+    const sorted = th.dataset.sort === sortKey;
+    th.classList.toggle("sorted", sorted);
+    th.classList.toggle("asc", sorted && sortDir === 1);
+  });
+}
+
+function renderFailures() {
+  const container = document.getElementById("failures");
+  const failures = (report && report.failures) || [];
+  if (!failures.length) {
+    container.textContent = "暂无";
+    return;
+  }
+
+  // report.failures 只有名字和地址，原因在 channels[].urls[] 里，按名字关联回查
+  const index = new Map((report.channels || []).map((channel) => [channel.name, channel.urls || []]));
+  const entriesOf = (item) => {
+    const entries = index.get(item.name) || [];
+    const failed = entries.filter((entry) => entry.status !== "ok");
+    return failed.length ? failed : entries;
+  };
+  const reasonOf = (entry) => {
+    const raw = String(entry.reason || "").trim();
+    if (!raw) return "未记录原因";
+    if (raw.includes("CERTIFICATE_VERIFY_FAILED")) return "证书无效";
+    if (raw.startsWith("HTTP None")) return "无响应状态";
+    return raw;
+  };
+
+  const counts = new Map();
+  failures.forEach((item) => entriesOf(item).forEach((entry) => {
+    const key = reasonOf(entry);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }));
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const chips = ranked.slice(0, 5)
+    .map(([key, value]) => `<span class="reason-chip">${esc(key)} ×${value}</span>`)
+    .join("");
+  const others = ranked.slice(5).reduce((sum, entry) => sum + entry[1], 0);
+  const totalUrls = ranked.reduce((sum, entry) => sum + entry[1], 0);
+
+  const row = (item) => {
+    const entries = entriesOf(item);
+    const reasons = [...new Set(entries.map(reasonOf))].join(" / ");
+    const urls = item.urls || [];
+    const shown = urls.slice(0, 2).map((url) => `<span>${esc(url)}</span>`).join("");
+    const more = urls.length > 2 ? `<span>… 另有 ${urls.length - 2} 条候选未展开</span>` : "";
+    return `<div class="failure-row">
+      <div class="name">${esc(item.name)}<span class="reason-tag">${esc(reasons)}</span></div>
+      <div class="urls">${shown}${more}</div>
+    </div>`;
+  };
+  const LIMIT = 50;
+  const head = failures.slice(0, LIMIT).map(row).join("");
+  const rest = failures.slice(LIMIT);
+  container.innerHTML =
+    `<div class="sub">共 ${failures.length} 个频道未测出可用地址 · 候选地址 ${totalUrls} 条</div>`
+    + `<div class="failure-summary">${chips}${others ? `<span class="reason-chip">其它 ×${others}</span>` : ""}</div>`
+    + head
+    + (rest.length
+      ? `<details><summary class="sub">展开其余 ${rest.length} 个</summary>${rest.map(row).join("")}</details>`
+      : "");
+}
+
+function renderDownloads() {
+  const container = document.getElementById("downloads");
+  const outputs = (report && report.outputs) || {};
+  const entries = Object.keys(DOWNLOAD_LABELS)
+    .filter((key) => outputs[key])
+    .map((key) => `<a href="/download?name=${encodeURIComponent(baseName(outputs[key]))}">${esc(DOWNLOAD_LABELS[key])}</a>`);
+  container.innerHTML = entries.length ? entries.join("") : '<div class="empty">暂无产物</div>';
+  renderExportPanel();
+}
+
+// ---- 导出：预设与自定义勾选 ----------------------------------------------
+
+const EXPORT_PRESETS = [
+  { label: "国内常用（央视+卫视）", groups: ["央视", "卫视"], file: "cn-common" },
+  { label: "仅央视", groups: ["央视"], file: "cctv" },
+  { label: "仅卫视", groups: ["卫视"], file: "satellite" },
+  { label: "地方频道", groups: ["地方"], file: "local" },
+  { label: "港澳台", groups: ["港澳台"], file: "hmt" },
+  { label: "全部可用", groups: null, file: "all" },
+];
+
+// 上游清单里混着少数宣传/占位条目，导出时排除，避免落进订阅
+const EXPORT_JUNK = /支持作者|点击收藏|免责声明|打赏|捐赠|招商|赞助/;
+
+function availableChannels() {
+  return ((report && report.channels) || [])
+    .filter((item) => item.best_url && !EXPORT_JUNK.test(item.name));
+}
+
+function channelsOfGroups(groups) {
+  const list = availableChannels();
+  return groups ? list.filter((item) => groups.includes(item.group)) : list;
+}
+
+function groupAllPicked(name) {
+  const list = channelsOfGroups([name]);
+  return list.length > 0 && list.every((item) => selected.has(item.key));
+}
+
+function sortForExport(list) {
+  return list.slice().sort((a, b) => {
+    const ai = GROUP_ORDER.indexOf(a.group);
+    const bi = GROUP_ORDER.indexOf(b.group);
+    const rank = (value) => (value < 0 ? GROUP_ORDER.length : value);
+    if (rank(ai) !== rank(bi)) return rank(ai) - rank(bi);
+    return a.name.localeCompare(b.name, "zh-Hans-CN");
+  });
+}
+
+// 与后端产物保持同样的头部与属性顺序
+function buildM3u(list) {
+  const epg = ((report && report.epg_urls) || []).filter((url) => /^http/i.test(url));
+  const head = epg.length ? `#EXTM3U x-tvg-url="${epg.join(",")}"` : "#EXTM3U";
+  const lines = sortForExport(list).map((item) => {
+    const attrs = [
+      `tvg-id="${item.tvg_id || ""}"`,
+      `tvg-name="${item.name}"`,
+      `tvg-logo="${item.logo || ""}"`,
+      `group-title="${item.group}"`,
+    ];
+    if (item.group_tags && item.group_tags.length) attrs.push(`group-tags="${item.group_tags.join(";")}"`);
+    return `#EXTINF:-1 ${attrs.join(" ")},${item.name}\n${item.best_url}`;
+  });
+  return `${head}\n${lines.join("\n")}\n`;
+}
+
+function stamp() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+function downloadM3u(label, list) {
+  if (!list.length) {
+    setNotice("没有可导出的可用频道，请先勾选或跑一次检测");
+    return;
+  }
+  const blob = new Blob([buildM3u(list)], { type: "audio/x-mpegurl" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `live-${label}-${stamp()}.m3u`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  setNotice(`已导出 ${list.length} 个频道`);
+}
+
+function renderExportPanel() {
+  const presets = document.getElementById("export-presets");
+  presets.innerHTML = EXPORT_PRESETS.map((preset) => {
+    const count = channelsOfGroups(preset.groups).length;
+    return `<button class="preset-chip" data-preset="${preset.file}"
+      title="导出 ${count} 个可用频道">${esc(preset.label)} <span class="sub">${count}</span></button>`;
+  }).join("");
+
+  const count = selected.size;
+  document.getElementById("export-count").textContent = `已选 ${count} 个频道`;
+  document.getElementById("export-selected").disabled = !count || busy;
+  document.getElementById("export-clear").disabled = !count || busy;
+  // 分组勾选状态跟随选择集合，清空或单条勾选后自动同步
+  document.querySelectorAll(".group-pick").forEach((box) => {
+    box.checked = groupAllPicked(box.dataset.group);
+  });
+  syncSelectPage();
+}
+
+function syncSelectPage() {
+  const box = document.getElementById("select-page");
+  const all = lastPageAvailable.length > 0 && lastPageAvailable.every((key) => selected.has(key));
+  box.checked = all;
+  box.disabled = !lastPageAvailable.length;
+}
+
+document.getElementById("select-page").addEventListener("change", (event) => {
+  const checked = event.target.checked;
+  lastPageAvailable.forEach((key) => (checked ? selected.add(key) : selected.delete(key)));
+  document.querySelectorAll(".pick-channel").forEach((box) => {
+    if (!box.disabled) box.checked = checked;
+  });
+  renderExportPanel();
+});
+
+document.getElementById("channel-rows").addEventListener("change", (event) => {
+  const box = event.target.closest(".pick-channel");
+  if (!box) return;
+  if (box.checked) selected.add(box.dataset.key);
+  else selected.delete(box.dataset.key);
+  renderExportPanel();
+});
+
+document.getElementById("groups").addEventListener("change", (event) => {
+  const box = event.target.closest(".group-pick");
+  if (!box) return;
+  channelsOfGroups([box.dataset.group]).forEach((item) => {
+    if (box.checked) selected.add(item.key);
+    else selected.delete(item.key);
+  });
+  renderExportPanel();
+});
+
+document.getElementById("export-presets").addEventListener("click", (event) => {
+  const chip = event.target.closest(".preset-chip");
+  if (!chip) return;
+  const preset = EXPORT_PRESETS.find((item) => item.file === chip.dataset.preset);
+  if (preset) downloadM3u(preset.file, channelsOfGroups(preset.groups));
+});
+
+document.getElementById("export-selected").addEventListener("click", () => {
+  const list = availableChannels().filter((item) => selected.has(item.key));
+  downloadM3u("selected", list);
+});
+
+document.getElementById("export-clear").addEventListener("click", () => {
+  selected.clear();
+  document.querySelectorAll(".pick-channel").forEach((box) => { box.checked = false; });
+  renderExportPanel();
+});
+
+async function startRun() {
+  setNotice("");
+  const payload = { speed_test: document.getElementById("f-speed").checked };
+  const limit = document.getElementById("f-limit").value;
+  const concurrency = document.getElementById("f-concurrency").value;
+  const minFluency = document.getElementById("f-min-fluency").value;
+  const maxPerChannel = document.getElementById("f-max-per-channel").value;
+  if (limit) payload.limit = Number(limit);
+  if (concurrency) payload.concurrency = Number(concurrency);
+  if (minFluency) payload.min_fluency = Number(minFluency);
+  if (maxPerChannel) payload.max_per_channel = Number(maxPerChannel);
+  try {
+    const snapshot = await api("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderStatus(snapshot);
+    renderProgress(snapshot);
+    schedule();
+  } catch (error) {
+    setNotice(error.message);
+  }
+}
+
+// 复测：只更新内存中的报告结果，不写 M3U 与报告文件
+async function retest(payload, message) {
+  if (busy) {
+    setNotice("当前有任务在运行，请稍后再试");
+    return;
+  }
+  setNotice(message);
+  try {
+    const snapshot = await api("/api/retest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    // 直接用 202 返回的快照刷新状态，避免等下一次轮询才显示「复测中」
+    retestPending = true;
+    renderStatus(snapshot);
+    renderProgress(snapshot);
+    schedule();
+  } catch (error) {
+    setNotice(error.message);
+  }
+}
+
+function retestGroup(name) {
+  retest({ group: name }, `复测分组「${name}」…`);
+}
+
+function retestChannel(key) {
+  retest({ channel: key }, "复测该频道的全部地址…");
+}
+
+function retestUrl(key, url) {
+  retest({ channel: key, url }, "复测该地址…");
+}
+
+document.getElementById("run-btn").addEventListener("click", startRun);
+document.getElementById("filter").addEventListener("input", () => {
+  page = 1;
+  renderChannels();
+});
+document.getElementById("prev-page").addEventListener("click", () => {
+  page -= 1;
+  renderChannels();
+});
+document.getElementById("next-page").addEventListener("click", () => {
+  page += 1;
+  renderChannels();
+});
+document.getElementById("status-filter").addEventListener("change", () => {
+  page = 1;
+  renderChannels();
+});
+document.getElementById("retest-group").addEventListener("click", () => {
+  if (activeGroup) retestGroup(activeGroup);
+});
+document.getElementById("retest-failed").addEventListener("click", () => {
+  retest({ scope: "failed" }, "复测失败项…");
+});
+document.getElementById("retest-page").addEventListener("click", () => {
+  if (!visibleKeys.length) {
+    setNotice("当前页没有频道");
+    return;
+  }
+  retest({ channels: visibleKeys }, `复测当前页 ${visibleKeys.length} 个频道…`);
+});
+// 点列头切换排序：首次降序，再次点反转方向
+document.querySelectorAll("th.sortable").forEach((th) => {
+  th.addEventListener("click", () => {
+    const key = th.dataset.sort;
+    if (sortKey === key) {
+      sortDir = -sortDir;
+    } else {
+      sortKey = key;
+      sortDir = -1;
+    }
+    page = 1;
+    updateSortHeaders();
+    renderChannels();
+  });
+});
+updateSortHeaders();
+// 键盘：/ 聚焦筛选，Esc 依次关闭播放器、清空筛选、退出分组
+document.addEventListener("keydown", (event) => {
+  const filter = document.getElementById("filter");
+  const inInput = ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName);
+  if (event.key === "/" && !inInput) {
+    event.preventDefault();
+    filter.focus();
+    return;
+  }
+  if (event.key !== "Escape") return;
+  if (!document.getElementById("player").classList.contains("hidden")) {
+    closePlayer();
+  } else if (document.activeElement === filter) {
+    filter.value = "";
+    document.getElementById("status-filter").value = "";
+    filter.blur();
+    page = 1;
+    renderChannels();
+  } else if (activeGroup) {
+    activeGroup = "";
+    page = 1;
+    renderGroups();
+    renderChannels();
+  }
+});
+// 播放统一走本地代理，避开远程源的跨域限制
+function playUrl(url) {
+  return "/proxy?url=" + encodeURIComponent(url);
+}
+
+function closePlayer() {
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+  const video = document.getElementById("player-video");
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  document.getElementById("player").classList.add("hidden");
+  document.getElementById("player-error").textContent = "";
+}
+
+function openPlayer(url, name) {
+  const box = document.getElementById("player");
+  const video = document.getElementById("player-video");
+  const error = document.getElementById("player-error");
+  let retries = 0;
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+  document.getElementById("player-title").textContent = name;
+  error.textContent = "";
+  box.classList.remove("hidden");
+  const proxied = playUrl(url);
+  if (window.Hls && window.Hls.isSupported()) {
+    hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+    hls.on(Hls.Events.ERROR, (_, data) => {
+      if (!data || !data.fatal) return;
+      error.textContent = "播放失败：" + (data.details || data.type || "未知错误");
+      // 网络与解码错误各只重试一次，避免无限重连刷日志
+      if (retries < 1) {
+        retries += 1;
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad();
+          return;
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+          return;
+        }
+      }
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        error.textContent = "播放失败：源不可达或未开放跨域（" + (data.details || "网络错误") + "）";
+      }
+    });
+    hls.loadSource(proxied);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play().catch(() => {});
+    });
+  } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    video.src = proxied;
+    video.play().catch(() => {});
+  } else {
+    error.textContent = "当前浏览器不支持 HLS 播放";
+  }
+}
+
+// 频道表按行渲染，播放与复测按钮用事件委托，避免每次重绘重复绑定
+document.getElementById("channel-rows").addEventListener("click", (event) => {
+  const retestButton = event.target.closest("button.retest-channel, button.retest-url");
+  if (retestButton) {
+    event.stopPropagation();
+    if (retestButton.classList.contains("retest-url")) {
+      retestUrl(retestButton.dataset.key, retestButton.dataset.url);
+    } else {
+      retestChannel(retestButton.dataset.key);
+    }
+    return;
+  }
+  const btn = event.target.closest("button.play");
+  if (!btn) return;
+  event.stopPropagation();
+  openPlayer(btn.dataset.url, btn.dataset.name);
+});
+document.getElementById("player-close").addEventListener("click", closePlayer);
+document.getElementById("player").addEventListener("click", (event) => {
+  if (event.target.id === "player") closePlayer();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !document.getElementById("player").classList.contains("hidden")) {
+    closePlayer();
+  }
+});
+
+async function loadSources() {
+  try {
+    renderSources(await api("/api/sources"));
+  } catch (error) {
+    document.getElementById("sources").innerHTML = `<div class="empty">${esc(error.message)}</div>`;
+  }
+}
+
+function renderSources(data) {
+  const box = document.getElementById("sources");
+  const items = data.sources || [];
+  const enabledCount = items.filter((item) => item.enabled).length;
+  document.getElementById("source-summary").textContent =
+    `${enabledCount} / ${items.length} 个源启用` + (data.running ? " · 检测进行中不可修改" : "");
+  if (!items.length) {
+    box.innerHTML = `<div class="empty">暂无源</div>`;
+    return;
+  }
+  box.innerHTML = items.map((item) => `
+    <div class="source-row${item.enabled ? " on" : ""}">
+      <div class="info">
+        <div class="name" title="${esc(item.name)}">${esc(item.name)}</div>
+        <div class="url" title="${esc(item.url)}">${esc(item.url)}</div>
+      </div>
+      <span class="state">${item.enabled ? "启用" : "已停用"}</span>
+      <button data-name="${esc(item.name)}" data-next="${item.enabled ? "0" : "1"}"
+        ${data.running ? "disabled" : ""}>${item.enabled ? "停用" : "启用"}</button>
+    </div>`).join("");
+  document.getElementById("source-add-btn").disabled = !!data.running;
+}
+
+async function addSource() {
+  const nameInput = document.getElementById("source-name");
+  const urlInput = document.getElementById("source-url");
+  const button = document.getElementById("source-add-btn");
+  const name = nameInput.value.trim();
+  const url = urlInput.value.trim();
+  if (!name || !url) {
+    setNotice("请填写源名称与地址");
+    return;
+  }
+  button.disabled = true;
+  try {
+    const data = await api("/api/sources/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, url }),
+    });
+    renderSources(data);
+    nameInput.value = "";
+    urlInput.value = "";
+    setNotice(`${name} 已添加，下次检测生效`);
+  } catch (error) {
+    setNotice(error.message);
+    button.disabled = false;
+  }
+}
+
+async function toggleSource(name, enabled, button) {
+  button.disabled = true;
+  try {
+    const data = await api("/api/sources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, enabled }),
+    });
+    renderSources(data);
+    setNotice(`${name} 已${enabled ? "启用" : "停用"}，下次检测生效`);
+  } catch (error) {
+    setNotice(error.message);
+    button.disabled = false;
+  }
+}
+
+// 源开关同样用事件委托：列表会整体重绘
+document.getElementById("sources").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-name]");
+  if (!button) return;
+  toggleSource(button.dataset.name, button.dataset.next === "1", button);
+});
+
+document.getElementById("source-add-btn").addEventListener("click", addSource);
+document.getElementById("source-url").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") addSource();
+});
+
+loadSources();
+refresh();
+</script>
+</body>
+</html>

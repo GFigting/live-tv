@@ -1,0 +1,73 @@
+# live-tv 源清单配置
+# 每条 source 支持 url（远程）或 path（本地文件，相对本配置文件所在目录解析）。
+# enabled: false 的源不会参与本次运行。
+
+output:
+  # 输出路径相对当前工作目录解析
+  m3u: output/live.m3u
+  report: output/report.json
+  # 按实际连接用的网络协议族额外输出 live-ipv4.m3u / live-ipv6.m3u
+  split_by_family: false
+
+# EPG 地址会写入 M3U 头部 x-tvg-url，播放器据此拉取节目单；
+# 开启 map 时还会用 EPG 台名给缺少 tvg-id 的频道回填频道 ID
+epg:
+  urls: []
+  # 是否用 EPG 台名回填 tvg-id；不需要映射时置 false
+  map: true
+  # 例：urls:
+  #   - https://epg.example.com/cn.xml
+  # 本地文件也可参与映射（相对本配置文件所在目录解析），且不会写入头部
+  #   - epg.example.xml
+
+check:
+  # 并发检测数：越高越快，但更占带宽与本机连接数
+  concurrency: 32
+  # 单次请求超时（秒）
+  timeout: 8
+  # 每个源采样测速时长（秒），用于计算比特率与流畅度
+  speed_seconds: 3
+  # 单个响应最多读取字节数，防止大文件拖慢检测
+  max_bytes: 4194304
+  # 流畅度阈值：低于该分的频道不进入订阅文件
+  min_fluency: 10
+  # 每个频道最多输出的 URL 条数（含最优一条）
+  max_per_channel: 2
+
+blacklist:
+  # 命中任一域名的直播源直接丢弃
+  domains: []
+  # 命中任一关键词的直播源直接丢弃
+  keywords: []
+
+sources:
+  # 国内：iptv-org 中国区频道
+  - name: iptv-org 中国
+    url: https://iptv-org.github.io/iptv/countries/cn.m3u
+    group: 中国大陆
+    enabled: true
+
+  # 国内：vbskycn 自动扫描验证的 IPv4 源（含台标与 EPG 属性）
+  - name: vbskycn IPv4
+    url: https://live.zbds.top/tv/iptv4.m3u
+    enabled: true
+
+  # 国内外：Collect-IPTV 每 4 小时更新，已做可用性与延迟筛选
+  - name: Collect-IPTV
+    url: https://raw.githubusercontent.com/zilong7728/Collect-IPTV/refs/heads/main/best_sorted.m3u8
+    enabled: true
+
+  # 海外：Free-TV 人工维护的官方免费频道（以欧美国家频道为主，默认关闭）
+  - name: Free-TV
+    url: https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8
+    enabled: false
+
+  # 海外：IPTV-tools 每周测试后仅保留可播频道的订阅
+  - name: IPTV-tools 每周可播
+    url: https://raw.githubusercontent.com/goplay-source/IPTV-tools/main/channel.m3u
+    enabled: true
+
+  # 全球全量：iptv-org 主播放列表，条目量大，默认关闭，需要全球全量时置 true
+  - name: iptv-org 全球
+    url: https://iptv-org.github.io/iptv/index.m3u
+    enabled: false
