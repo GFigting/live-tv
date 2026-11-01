@@ -1,6 +1,10 @@
 name: Deploy console to GitHub Pages
 
 on:
+  # 定时重跑流水线，保持线上快照页新鲜（对齐 Collect-IPTV 的「每 N 小时自动更新」）
+  # GitHub 的 cron 为 UTC 时间；如需更频繁可改为 "0 */4 * * *"（每 4 小时）
+  schedule:
+    - cron: "0 */6 * * *"
   push:
     branches: [master]
     paths:
