@@ -1,0 +1,44 @@
+name: Deploy console to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/livetv/web/static/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# 允许工作流把产物发布到 Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署，新推送会取消进行中的旧部署
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # 控制台静态资源目录：index.html + lib/hls.min.js
+          path: src/livetv/web/static
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
