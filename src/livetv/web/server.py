@@ -35,10 +35,12 @@ ROUTE_DOWNLOAD = "/download"
 ROUTE_PROXY = PROXY_ROUTE
 # 只放行播放器库这一个固定静态路径，避免任意文件读取
 ROUTE_HLS_JS = "/static/lib/hls.min.js"
+ROUTE_REFERENCE = "/reference.html"
 
 STATIC_DIR = Path(__file__).parent / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
 HLS_JS_FILE = STATIC_DIR / "lib" / "hls.min.js"
+REFERENCE_FILE = STATIC_DIR / "reference.html"
 
 CONTENT_TYPE_HTML = "text/html; charset=utf-8"
 CONTENT_TYPE_JSON = "application/json; charset=utf-8"
@@ -107,6 +109,8 @@ class _HandlerBase(BaseHTTPRequestHandler):
             self._send_proxy(parse_qs(parsed.query))
         elif parsed.path == ROUTE_HLS_JS:
             self._send_hls_js()
+        elif parsed.path == ROUTE_REFERENCE:
+            self._send_reference()
         else:
             self._send_json({"error": "未知路径"}, HTTPStatus.NOT_FOUND)
 
@@ -293,6 +297,15 @@ class _HandlerBase(BaseHTTPRequestHandler):
             body = INDEX_FILE.read_bytes()
         except OSError:
             self._send_json({"error": "页面文件缺失"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        self._send_bytes(body, CONTENT_TYPE_HTML)
+
+    def _send_reference(self) -> None:
+        """返回静态参考页；与控制台同源部署时可复用 /proxy 代理播放。"""
+        try:
+            body = REFERENCE_FILE.read_bytes()
+        except OSError:
+            self._send_json({"error": "参考页文件缺失"}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         self._send_bytes(body, CONTENT_TYPE_HTML)
 

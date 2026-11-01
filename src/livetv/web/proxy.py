@@ -14,7 +14,28 @@ PROXY_SCHEMES = frozenset({"http", "https"})
 PLAYLIST_CONTENT_TYPE_HINT = "mpegurl"
 PLAYLIST_SUFFIX = ".m3u8"
 PLAYLIST_SIGNATURE = b"#EXTM3U"
-REQUEST_HEADERS = {"User-Agent": DEFAULT_USER_AGENT, "Accept": "*/*"}
+
+
+def build_headers(url: str) -> dict[str, str]:
+    """构造与检测请求一致的请求头：按目标站点补 Referer/Origin。
+
+    检测阶段（checker.CheckSettings.headers）会带上 Referer/Origin 以通过防盗链，
+    而早期代理使用固定请求头、不含这两项，导致「检测成功但播放被源站 403」。
+
+    这里复刻同一逻辑：Referer/Origin 均取目标 URL 自身的 origin，
+    让代理拉流与检测拉流行为一致。
+    """
+    headers = {
+        "User-Agent": DEFAULT_USER_AGENT,
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+    parsed = urlparse(url)
+    if parsed.scheme and parsed.netloc:
+        site = f"{parsed.scheme}://{parsed.netloc}"
+        headers["Referer"] = f"{site}/"
+        headers["Origin"] = site
+    return headers
 
 
 def allowed_hosts(report: dict | None) -> set[str]:
@@ -86,7 +107,7 @@ def proxied_targets(text: str, proxy_path: str) -> list[str]:
 def fetch_stream(url: str, *, timeout: float, max_bytes: int) -> tuple[int, str | bytes]:
     """抓取远程地址：m3u8 清单改写后返回文本，其余按字节返回。"""
     # 每次新建 Client 且不设 Cookie，避免把本地或跨站 Cookie 转发给上游
-    with httpx.Client(follow_redirects=True, timeout=timeout, headers=REQUEST_HEADERS) as client:
+    with httpx.Client(follow_redirects=True, timeout=timeout, headers=build_headers(url)) as client:
         with client.stream("GET", url) as response:
             status = response.status_code
             if _declared_playlist(response, url):

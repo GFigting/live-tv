@@ -2,7 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
 <title>live-tv 直播源监控 | 自动检测</title>
 <style>
   :root{
@@ -13,7 +14,9 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;}
-  .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 60px;}
+  /* 刘海屏 / 电视过扫描安全区 */
+  .wrap{max-width:1080px;margin:0 auto;
+    padding:max(20px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 60px max(16px,env(safe-area-inset-left));}
   header h1{font-size:22px;margin:0 0 4px;}
   header p{margin:0;color:var(--muted);font-size:13px;}
   .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;
@@ -31,6 +34,8 @@
   button:hover{border-color:var(--accent);}
   button.primary{background:var(--accent);color:#06283b;border-color:var(--accent);font-weight:600;}
   .chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);user-select:none;}
+  /* 表格在窄屏可横向滚动，避免挤压导致播放/复制按钮不可点 */
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
   table{width:100%;border-collapse:collapse;background:var(--panel);
     border:1px solid var(--line);border-radius:12px;overflow:hidden;}
   th,td{padding:10px 12px;text-align:left;font-size:14px;border-bottom:1px solid var(--line);}
@@ -54,16 +59,85 @@
   .copy:hover{background:rgba(56,189,248,.12);}
   .dead .name{color:var(--bad);}
   .state{padding:40px;text-align:center;color:var(--muted);}
+  .note{margin:14px 0 0;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.6;}
+  .note.ok{background:rgba(34,197,94,.12);border:1px solid var(--accent2);color:var(--accent2);}
+  .note.warn{background:rgba(245,158,11,.12);border:1px solid var(--warn);color:var(--warn);}
   .spin{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--accent);
     border-radius:50%;animation:sp 1s linear infinite;margin:0 auto 12px;}
   @keyframes sp{to{transform:rotate(360deg)}}
   footer{margin-top:22px;color:var(--muted);font-size:12px;text-align:center;line-height:1.7;}
   a{color:var(--accent);text-decoration:none;}
   a:hover{text-decoration:underline;}
-  .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);
+  .toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);
     background:var(--accent);color:#06283b;padding:9px 16px;border-radius:10px;font-weight:600;
-    opacity:0;pointer-events:none;transition:.25s;font-size:13px;}
+    opacity:0;pointer-events:none;transition:.25s;font-size:13px;z-index:60;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* 操作列：播放 + 复制，按钮足够大便于触摸点按 */
+  .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .play{cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:#06283b;
+    padding:7px 13px;border-radius:8px;font-size:13px;font-weight:600;white-space:nowrap;}
+  .play:hover{filter:brightness(1.08);}
+  .play.try{border-color:var(--warn);background:transparent;color:var(--warn);}
+
+  /* 统一播放器浮层 */
+  .player{position:fixed;inset:0;z-index:50;padding:16px;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(6,9,12,.9);}
+  .player.hidden{display:none;}
+  .player-panel{width:min(960px,100%);display:flex;flex-direction:column;gap:10px;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px 16px;}
+  .player-head{display:flex;align-items:center;gap:12px;}
+  .player-title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .player-head button{margin-left:auto;}
+  .player video{width:100%;max-height:72vh;background:#000;border-radius:8px;}
+  .player-error{color:var(--warn);font-size:12px;min-height:16px;word-break:break-all;}
+
+  /* ---------- 安卓 / 平板 / 电视 适配 ---------- */
+  /* 触摸 / 无悬停设备：放大点按目标，避免误触；iOS 输入框≥16px 防止聚焦缩放 */
+  @media (hover:none){
+    input,select,button{padding:12px 14px;font-size:16px;}
+    .bar{gap:12px;}
+    #search{width:100%;max-width:none;}
+    .copy,.play{padding:12px 16px;font-size:15px;}
+    .acts{justify-content:flex-start;}
+  }
+  /* 平板：放宽容器 */
+  @media (min-width:768px) and (max-width:1024px){
+    .wrap{max-width:920px;}
+  }
+  /* 手机：隐藏序号列，分类已置于名称下故可隐藏分类列；表格横向滚动保信息不丢 */
+  @media (max-width:640px){
+    #tbl{min-width:520px;}
+    th.col-idx,td.col-idx{display:none;}
+    header h1{font-size:19px;}
+    footer{font-size:11px;}
+  }
+  /* 电视 / 大屏：10 英尺界面，整体放大字号与间距 */
+  @media (min-width:1600px){
+    body{font-size:17px;}
+    .wrap{max-width:1440px;padding:32px 28px 60px;}
+    header h1{font-size:30px;}
+    header p{font-size:16px;}
+    input,select,button{font-size:16px;padding:12px 16px;}
+    #search{width:320px;}
+    th,td{padding:14px 16px;font-size:16px;}
+    .logo,.logo-ph{width:44px;height:44px;}
+    .toast{font-size:16px;padding:12px 20px;}
+    .player-panel{width:min(1280px,100%);}
+    .player video{max-height:78vh;}
+  }
+  @media (min-width:2560px){
+    body{font-size:22px;}
+    .wrap{max-width:2000px;}
+    header h1{font-size:40px;}
+    th,td{padding:18px 20px;font-size:20px;}
+    input,select,button{font-size:20px;padding:16px 22px;}
+    .logo,.logo-ph{width:56px;height:56px;}
+  }
+  /* 遥控器 / 键盘（D-pad）导航焦点环 */
+  :focus-visible{outline:3px solid var(--accent);outline-offset:2px;}
+  button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px;}
 </style>
 </head>
 <body>
@@ -72,6 +146,8 @@
     <h1>📡 live-tv 直播源监控</h1>
     <p>CI 定时抓取 + 逐条检测（存活 / 延迟 / 码率），页面运行时拉取最新快照 · 与 Collect-IPTV 同套路</p>
   </header>
+
+  <div id="proxy-note" class="note hidden"></div>
 
   <div class="bar">
     <div class="stat">🕒 数据版本：<b id="updated">加载中…</b></div>
@@ -86,19 +162,21 @@
 
   <div id="state" class="state"><div class="spin"></div>正在加载最新直播源数据…</div>
 
+  <div class="table-wrap">
   <table id="tbl" style="display:none">
     <thead>
       <tr>
-        <th style="width:44px">#</th>
+        <th class="col-idx" style="width:44px">#</th>
         <th style="width:46px">台标</th>
         <th>频道名称</th>
-        <th style="width:130px">分类</th>
+        <th class="col-group" style="width:130px">分类</th>
         <th style="width:120px">延迟</th>
-        <th style="width:96px">操作</th>
+        <th style="width:120px">操作</th>
       </tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
+  </div>
 
   <footer>
     控制台完整版（含 EPG / 复测）：<a href="./index.html">index.html</a> ·
@@ -108,6 +186,39 @@
 </div>
 <div class="toast" id="toast"></div>
 
+<div id="player" class="player hidden">
+  <div class="player-panel">
+    <div class="player-head">
+      <div id="player-title" class="player-title"></div>
+      <button id="player-close" class="primary">关闭</button>
+    </div>
+    <video id="player-video" controls autoplay playsinline webkit-playsinline></video>
+    <div id="player-error" class="player-error"></div>
+  </div>
+</div>
+
+<!-- 兼容两种环境：静态构建产物（/static/lib）与源码目录（./lib） -->
+<script>
+window.ensureHls = function () {
+  if (window.Hls) return Promise.resolve();
+  if (!window.__hlsLoading) {
+    window.__hlsLoading = new Promise(function (resolve) {
+      var s = document.createElement("script");
+      s.src = "/static/lib/hls.min.js";
+      s.onload = function () { window.__hlsLoading = null; resolve(); };
+      s.onerror = function () {
+        var f = document.createElement("script");
+        f.src = "./lib/hls.min.js";
+        f.onload = function () { window.__hlsLoading = null; resolve(); };
+        f.onerror = function () { window.__hlsLoading = null; resolve(); };
+        document.head.appendChild(f);
+      };
+      document.head.appendChild(s);
+    });
+  }
+  return window.__hlsLoading;
+};
+</script>
 <script>
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const alive = c => !!c.best_url;
@@ -115,6 +226,36 @@ function latClass(ms){ if(ms==null) return 'none'; return ms<=300?'good':ms<=800
 function latText(ms){ return ms==null?'未测出':Math.round(ms)+' ms'; }
 
 let ALL = [];
+let hls = null;
+let USE_PROXY = false;
+
+// 若本页与运行中心（livetv web 服务）同源托管，则复用 /proxy 代理播放：
+// 既能绕过浏览器跨域限制，又用与检测一致的 Referer/Origin 通过防盗链，
+// 效果等同「浏览器直接访问源站」。无后端时回退直连（开放源可播）。
+async function detectProxy(){
+  try{
+    const ctrl=new AbortController();
+    const t=setTimeout(()=>ctrl.abort(),1500);
+    const r=await fetch('/api/health',{cache:'no-store',signal:ctrl.signal});
+    clearTimeout(t);
+    USE_PROXY = r.ok;
+  }catch(e){ USE_PROXY=false; }
+  updateProxyNote();
+}
+function playUrl(url){
+  return USE_PROXY ? '/proxy?url='+encodeURIComponent(url) : url;
+}
+function updateProxyNote(){
+  const note=document.getElementById('proxy-note');
+  if(!note) return;
+  if(USE_PROXY){
+    note.className='note ok';
+    note.textContent='✅ 已连接运行中心代理：可直接播放防盗链 / 跨域源';
+  }else{
+    note.className='note warn';
+    note.textContent='⚠️ 未连接运行中心代理：部分防盗链 / 跨域源可能无法直接播放，可用 VLC 打开源地址，或将本页部署到运行中心后访问';
+  }
+}
 
 function toast(msg){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
@@ -146,6 +287,7 @@ async function load(){
       groups.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');
     state.style.display='none'; tbl.style.display='table';
     render();
+    detectProxy();
   }catch(e){
     state.style.display='block';
     state.innerHTML='⚠️ 数据加载失败：'+esc(e.message)+'<br><span class="sub">请稍后点「刷新」重试</span>';
@@ -181,18 +323,85 @@ function render(){
       ? `<div class="fbar"><i style="width:${Math.max(4,Math.min(100,Math.round(c.fluency*100)))}%"></i></div>`
       : '';
     const grp = c.group?`<span class="tag">${esc(c.group)}</span>`:'';
+    // 无可用地址时仍允许用首个候选试播（检测失败≠播放必失败）
+    const firstUrl = (c.urls&&c.urls[0]&&c.urls[0].url)||'';
     const action = ok
-      ? `<button class="copy" onclick="copyURL(${JSON.stringify(c.best_url)})">复制</button>`
-      : `<span class="sub">${esc((c.urls&&c.urls[0]&&c.urls[0].reason)||'检测失败')}</span>`;
+      ? `<div class="acts">
+           <button class="play" data-url="${esc(c.best_url)}" data-name="${esc(c.name||'?')}">▶ 播放</button>
+           <button class="copy" data-url="${esc(c.best_url)}">复制</button>
+         </div>`
+      : (firstUrl
+          ? `<div class="acts"><button class="play try" data-url="${esc(firstUrl)}" data-name="${esc(c.name||'?')}">试播</button></div>`
+          : `<span class="sub">${esc((c.urls&&c.urls[0]&&c.urls[0].reason)||'检测失败')}</span>`);
     const tr=document.createElement('tr');
     if(!ok) tr.className='dead';
-    tr.innerHTML=`<td class="sub">${i+1}</td><td>${logo}</td>`+
-      `<td><div class="name">${esc(c.name||'?')}</div>${c.ip_family?`<div class="sub">${esc(c.ip_family)}</div>`:''}</td>`+
-      `<td>${grp}</td><td>${lat}${flu}</td><td>${action}</td>`;
+    tr.innerHTML=`<td class="col-idx sub">${i+1}</td><td>${logo}</td>`+
+      `<td><div class="name">${esc(c.name||'?')}</div>${grp}${c.ip_family?`<div class="sub">${esc(c.ip_family)}</div>`:''}</td>`+
+      `<td class="col-group">${grp}</td><td>${lat}${flu}</td><td>${action}</td>`;
     frag.appendChild(tr);
   });
   rows.innerHTML=''; rows.appendChild(frag);
 }
+
+/* 播放优先走运行中心 /proxy（同源，绕过 CORS 并复刻检测的 Referer/Origin），无后端时回退直连（开放源可播，防盗链/无 CORS 源需 VLC） */
+function closePlayer(){
+  if(hls){ hls.destroy(); hls=null; }
+  const video=document.getElementById('player-video');
+  video.pause(); video.removeAttribute('src'); video.load();
+  document.getElementById('player').classList.add('hidden');
+  document.getElementById('player-error').textContent='';
+}
+async function openPlayer(url, name){
+  const box=document.getElementById('player');
+  const video=document.getElementById('player-video');
+  const error=document.getElementById('player-error');
+  if(hls){ hls.destroy(); hls=null; }
+  document.getElementById('player-title').textContent=name;
+  error.textContent='';
+  box.classList.remove('hidden');
+  const target = playUrl(url);
+  // HLS 需要 hls.js：若尚未载入则按需拉取（兼容静态产物与源码目录两种路径）
+  const isHls = /\.m3u8(\?|$)/i.test(url);
+  if(isHls && !window.Hls){ await window.ensureHls(); }
+  let retries=0;
+  if(window.Hls && window.Hls.isSupported()){
+    hls=new Hls({enableWorker:true, lowLatencyMode:true});
+    hls.on(Hls.Events.ERROR,(_,data)=>{
+      if(!data||!data.fatal) return;
+      error.textContent='播放失败：'+(data.details||data.type||'未知错误')+(USE_PROXY?'':' · 提示：本页未连运行中心代理，跨域源可能受限，可用 VLC 打开源地址');
+      if(retries<1){
+        retries+=1;
+        if(data.type===Hls.ErrorTypes.NETWORK_ERROR){ hls.startLoad(); return; }
+        if(data.type===Hls.ErrorTypes.MEDIA_ERROR){ hls.recoverMediaError(); return; }
+      }
+      if(data.type===Hls.ErrorTypes.NETWORK_ERROR){
+        error.textContent='播放失败：源不可达或未开放跨域（'+(data.details||'网络错误')+'）'+(USE_PROXY?'':' · 请改用运行中心访问本页或用 VLC 打开');
+      }
+    });
+    hls.loadSource(target);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED,()=>{ video.play().catch(()=>{}); });
+  } else if(video.canPlayType('application/vnd.apple.mpegurl')){
+    video.src=target; video.play().catch(()=>{});
+  } else {
+    error.textContent='当前浏览器不支持 HLS 播放（可尝试用 VLC 打开源地址）';
+  }
+}
+
+/* 事件委托：播放与复制按钮，避免每次重绘重复绑定 */
+document.getElementById('rows').addEventListener('click',(event)=>{
+  const playBtn=event.target.closest('button.play');
+  if(playBtn){ event.stopPropagation(); openPlayer(playBtn.dataset.url, playBtn.dataset.name); return; }
+  const copyBtn=event.target.closest('button.copy');
+  if(copyBtn){ event.stopPropagation(); copyURL(copyBtn.dataset.url); }
+});
+document.getElementById('player-close').addEventListener('click', closePlayer);
+document.getElementById('player').addEventListener('click',(event)=>{
+  if(event.target.id==='player') closePlayer();
+});
+document.addEventListener('keydown',(event)=>{
+  if(event.key==='Escape' && !document.getElementById('player').classList.contains('hidden')) closePlayer();
+});
 
 load();
 </script>

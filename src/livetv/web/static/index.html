@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>live-tv 控制台</title>
 <meta name="theme-color" content="#0e1116">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e1116'/%3E%3Crect x='9' y='15' width='46' height='31' rx='6' fill='none' stroke='%233ec6a8' stroke-width='4'/%3E%3Cpath d='M27 25l14 8-14 8z' fill='%233ec6a8'/%3E%3Cpath d='M23 54h18' stroke='%233ec6a8' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
@@ -337,6 +337,58 @@ a.plain:hover { text-decoration: underline; }
 ::-webkit-scrollbar-thumb { background: #2f3844; border-radius: 6px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: #3a4552; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 安卓 / 平板 / 电视 适配 ---------- */
+/* 安全区（刘海屏 / 电视过扫描）：在原内边距基础上并入 env() 安全边距 */
+header, main { padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+main { padding-top: max(18px, env(safe-area-inset-top)); padding-bottom: max(48px, env(safe-area-inset-bottom)); }
+
+/* 触摸 / 无悬停设备：放大点按目标避免误触；iOS 输入框≥16px 防止聚焦缩放 */
+@media (hover: none) {
+  input, select, button { font-size: 16px; }
+  .field input[type=number], .toolbar input:not([type=checkbox]) { height: 44px; padding: 0 12px; }
+  button { height: 44px; padding: 0 18px; }
+  .source-add input { height: 40px; }
+  .source-add button, .source-row button { height: 36px; padding: 0 14px; font-size: 13px; }
+  button.mini, button.play, button.play-mini { height: 32px; padding: 0 12px; font-size: 13px; }
+  /* hover 才显示的复测按钮改为常显，否则触屏永远点不到 */
+  .group-row .retest { opacity: 1; height: 30px; padding: 0 12px; }
+  .pager button, .export-bar button { height: 38px; }
+}
+
+/* 平板：放宽主内容区 */
+@media (min-width: 768px) and (max-width: 1100px) {
+  main { max-width: 1100px; }
+}
+
+/* 电视 / 大屏：10 英尺界面，整体放大字号与间距 */
+@media (min-width: 1600px) {
+  :root { --control-h: 44px; --gap: 18px; }
+  body { font-size: 16px; }
+  main { max-width: 1500px; padding: 28px 32px 56px; }
+  header { padding: 18px 32px; }
+  header h1 { font-size: 24px; }
+  .card { padding: 20px 22px; }
+  .cards { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .groups { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .stat .v { font-size: 28px; }
+  th, td { padding: 12px 14px; font-size: 15px; }
+  .player-panel { width: min(1280px, 100%); }
+  .player video { max-height: 80vh; }
+  .player-title { font-size: 20px; }
+}
+@media (min-width: 2560px) {
+  body { font-size: 20px; }
+  main { max-width: 2100px; }
+  header h1 { font-size: 32px; }
+  th, td { padding: 16px 18px; font-size: 19px; }
+  .stat .v { font-size: 38px; }
+}
+
+/* 遥控器 / 键盘（D-pad）导航焦点环：让可聚焦元素在电视上清晰可见 */
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible,
+.group-row:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 </style>
 </head>
 <body>
@@ -475,7 +527,7 @@ a.plain:hover { text-decoration: underline; }
       <div id="player-title" class="player-title"></div>
       <button id="player-close" class="ghost">关闭</button>
     </div>
-    <video id="player-video" controls autoplay playsinline></video>
+    <video id="player-video" controls autoplay playsinline webkit-playsinline></video>
     <div id="player-error" class="player-error"></div>
   </div>
 </div>
@@ -682,6 +734,15 @@ const GROUP_COLORS = {
   少儿: "#c3f0ca", 纪录: "#7dcfff", 音乐: "#d67aff", 其他: "#9aa5b1",
 };
 
+// 分组行切换筛选；同时供点击与遥控器（D-pad）回车复用
+function toggleGroupRow(row) {
+  const name = row.dataset.group;
+  activeGroup = activeGroup === name ? "" : name;
+  page = 1;
+  renderGroups();
+  renderChannels();
+}
+
 function renderGroups() {
   const container = document.getElementById("groups");
   const summary = document.getElementById("group-summary");
@@ -705,7 +766,7 @@ function renderGroups() {
     const active = name === activeGroup ? " active" : "";
     const zero = count ? "" : " zero";
     return `
-    <div class="group-row${active}${zero}" data-group="${esc(name)}"
+    <div class="group-row${active}${zero}" data-group="${esc(name)}" tabindex="0"
          style="--c:${color};--p:${percent.toFixed(1)}%">
       <div class="head">
         <span class="dot"></span>
@@ -734,10 +795,7 @@ function renderGroups() {
       }
       // 导出勾选框只改变选择，不切换筛选
       if (event.target.closest(".group-pick")) return;
-      activeGroup = activeGroup === name ? "" : name;
-      page = 1;
-      renderGroups();
-      renderChannels();
+      toggleGroupRow(row);
     });
   });
 }
@@ -1080,6 +1138,20 @@ document.getElementById("groups").addEventListener("change", (event) => {
     else selected.delete(item.key);
   });
   renderExportPanel();
+});
+// 遥控器 / 键盘（D-pad）：分组行可聚焦（tabindex=0），回车或空格切换筛选，不干扰复测与勾选
+document.getElementById("groups").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const row = event.target.closest(".group-row");
+  if (!row) return;
+  if (event.target.closest(".retest")) {
+    event.preventDefault();
+    retestGroup(row.dataset.group);
+    return;
+  }
+  if (event.target.closest(".group-pick")) return;
+  event.preventDefault();
+  toggleGroupRow(row);
 });
 
 document.getElementById("export-presets").addEventListener("click", (event) => {
