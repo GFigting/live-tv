@@ -42,11 +42,11 @@ jobs:
       - name: Install dependencies
         run: pip install -e .
 
-      # 在 CI 里用 Python 跑流水线：抓取并解析/合并源，产出 output/report.json
-      # --no-test 只做解析合并、不做逐条测速，稳定且快；
-      # 想要线上带流畅度评分，可去掉 --no-test（CI 更慢、流量更大）。
-      - name: Generate report
-        run: python -m livetv check --config config/sources.yaml --no-test
+      # 在 CI 里用 Python 跑流水线：抓取源 + 逐条检测（存活/延迟/码率），产出
+      # output/live.m3u（已检测可导入清单）与 output/report.json（含评分的快照）。
+      # 对齐 Collect-IPTV：每次定时/推送都做真实检测，线上不再是空壳。
+      - name: Generate report (with live detection)
+        run: python -m livetv check --config config/sources.yaml --out output/live.m3u --report output/report.json
 
       # 把报告塞进页面，生成只读快照静态站点到 dist/
       - name: Build static snapshot

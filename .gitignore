@@ -4,11 +4,10 @@ __pycache__/
 .venv/
 *.egg-info/
 
-# 运行产物
+# 运行产物（由 CI 在 Actions 里生成，经 Pages 发布）
 output/*
 *.log
-# 只保留最终订阅清单，便于在私有仓里存档最近一次结果
-!output/live.m3u
+dist/
 .pytest_cache/
 
 # 本地参考材料

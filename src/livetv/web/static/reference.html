@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>live-tv 直播源监控 | 自动检测</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --line:#334155;
+    --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --accent2:#22c55e;
+    --warn:#f59e0b; --bad:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 60px;}
+  header h1{font-size:22px;margin:0 0 4px;}
+  header p{margin:0;color:var(--muted);font-size:13px;}
+  .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:16px 0;}
+  .stat{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);}
+  .stat b{color:var(--text);font-weight:600;}
+  .grow{flex:1}
+  input,select,button{font-size:14px;font-family:inherit;}
+  input,select{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    padding:9px 12px;border-radius:9px;outline:none;}
+  input:focus,select:focus{border-color:var(--accent);}
+  #search{width:240px;max-width:60vw;}
+  button{cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    padding:9px 14px;border-radius:9px;transition:.15s;}
+  button:hover{border-color:var(--accent);}
+  button.primary{background:var(--accent);color:#06283b;border-color:var(--accent);font-weight:600;}
+  .chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);user-select:none;}
+  table{width:100%;border-collapse:collapse;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  th,td{padding:10px 12px;text-align:left;font-size:14px;border-bottom:1px solid var(--line);}
+  th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:12px;
+    text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;}
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:var(--panel2);}
+  .logo{width:34px;height:34px;border-radius:8px;object-fit:cover;background:#0b1220;display:block;}
+  .logo-ph{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    background:#0b1220;color:var(--muted);font-weight:700;font-size:14px;}
+  .name{font-weight:600;}
+  .sub{color:var(--muted);font-size:12px;}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;background:var(--panel2);
+    border:1px solid var(--line);font-size:12px;color:var(--muted);}
+  .lat{font-weight:700;font-variant-numeric:tabular-nums;}
+  .lat.good{color:var(--accent2)} .lat.mid{color:var(--warn)} .lat.bad{color:var(--bad)} .lat.none{color:var(--muted)}
+  .fbar{height:6px;border-radius:999px;background:var(--panel2);overflow:hidden;width:70px;margin-top:4px;}
+  .fbar>i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));}
+  .copy{cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--accent);
+    padding:6px 10px;border-radius:8px;font-size:12px;}
+  .copy:hover{background:rgba(56,189,248,.12);}
+  .dead .name{color:var(--bad);}
+  .state{padding:40px;text-align:center;color:var(--muted);}
+  .spin{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;animation:sp 1s linear infinite;margin:0 auto 12px;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  footer{margin-top:22px;color:var(--muted);font-size:12px;text-align:center;line-height:1.7;}
+  a{color:var(--accent);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);
+    background:var(--accent);color:#06283b;padding:9px 16px;border-radius:10px;font-weight:600;
+    opacity:0;pointer-events:none;transition:.25s;font-size:13px;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📡 live-tv 直播源监控</h1>
+    <p>CI 定时抓取 + 逐条检测（存活 / 延迟 / 码率），页面运行时拉取最新快照 · 与 Collect-IPTV 同套路</p>
+  </header>
+
+  <div class="bar">
+    <div class="stat">🕒 数据版本：<b id="updated">加载中…</b></div>
+    <div class="stat">✅ 存活频道：<b id="count">-</b></div>
+    <div class="grow"></div>
+    <input id="search" type="text" placeholder="🔍 搜索频道 / 分类…" oninput="render()">
+    <select id="cat" onchange="render()"><option value="">📁 所有分类</option></select>
+    <label class="chk"><input type="checkbox" id="showDead" onchange="render()">显示检测失败</label>
+    <button onclick="load()">🔄 刷新</button>
+    <button class="primary" onclick="copyM3U()">📋 复制 M3U 链接</button>
+  </div>
+
+  <div id="state" class="state"><div class="spin"></div>正在加载最新直播源数据…</div>
+
+  <table id="tbl" style="display:none">
+    <thead>
+      <tr>
+        <th style="width:44px">#</th>
+        <th style="width:46px">台标</th>
+        <th>频道名称</th>
+        <th style="width:130px">分类</th>
+        <th style="width:120px">延迟</th>
+        <th style="width:96px">操作</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <footer>
+    控制台完整版（含 EPG / 复测）：<a href="./index.html">index.html</a> ·
+    可导入播放列表：<a href="./live.m3u" target="_blank">live.m3u</a><br>
+    数据由 GitHub Actions 自动检测生成，频道可用性随时变化，以实际播放为准。
+  </footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const alive = c => !!c.best_url;
+function latClass(ms){ if(ms==null) return 'none'; return ms<=300?'good':ms<=800?'mid':'bad'; }
+function latText(ms){ return ms==null?'未测出':Math.round(ms)+' ms'; }
+
+let ALL = [];
+
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1400);
+}
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); toast('已复制'); }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove(); toast('已复制'); }
+}
+function copyURL(u){ copyText(u); }
+function copyM3U(){
+  const base = location.origin + location.pathname.replace(/reference\.html$/,'');
+  copyText(base + 'live.m3u');
+}
+
+async function load(){
+  const state=document.getElementById('state'), tbl=document.getElementById('tbl');
+  state.style.display='block'; state.innerHTML='<div class="spin"></div>正在加载最新直播源数据…';
+  tbl.style.display='none';
+  try{
+    const res = await fetch('./report.json', {cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    ALL = Array.isArray(data.channels)?data.channels:[];
+    document.getElementById('updated').textContent = (data.generated_at||'-').replace('T',' ').slice(0,19);
+    const groups=[...new Set(ALL.map(c=>c.group||'其他'))].sort();
+    document.getElementById('cat').innerHTML='<option value="">📁 所有分类</option>'+
+      groups.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');
+    state.style.display='none'; tbl.style.display='table';
+    render();
+  }catch(e){
+    state.style.display='block';
+    state.innerHTML='⚠️ 数据加载失败：'+esc(e.message)+'<br><span class="sub">请稍后点「刷新」重试</span>';
+  }
+}
+
+function render(){
+  const q=document.getElementById('search').value.trim().toLowerCase();
+  const cat=document.getElementById('cat').value;
+  const showDead=document.getElementById('showDead').checked;
+  const rows=document.getElementById('rows');
+  const list=ALL.filter(c=>{
+    if(!showDead && !alive(c)) return false;
+    if(cat && c.group!==cat) return false;
+    if(q && !((c.name||'').toLowerCase().includes(q)) && !((c.group||'').toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const aliveN=list.filter(alive).length;
+  document.getElementById('count').textContent = aliveN+' / '+list.length;
+
+  if(list.length===0){
+    rows.innerHTML='<tr><td colspan="6" class="state">没有匹配的频道</td></tr>';
+    return;
+  }
+  const frag=document.createDocumentFragment();
+  list.forEach((c,i)=>{
+    const ok=alive(c);
+    const logo = c.logo
+      ? `<img class="logo" src="${esc(c.logo)}" alt="" onerror="this.outerHTML='<div class=&quot;logo-ph&quot;>${esc((c.name||'?').slice(0,1))}</div>'">`
+      : `<div class="logo-ph">${esc((c.name||'?').slice(0,1))}</div>`;
+    const lat = `<span class="lat ${latClass(c.latency_ms)}">${latText(c.latency_ms)}</span>`;
+    const flu = (c.fluency!=null)
+      ? `<div class="fbar"><i style="width:${Math.max(4,Math.min(100,Math.round(c.fluency*100)))}%"></i></div>`
+      : '';
+    const grp = c.group?`<span class="tag">${esc(c.group)}</span>`:'';
+    const action = ok
+      ? `<button class="copy" onclick="copyURL(${JSON.stringify(c.best_url)})">复制</button>`
+      : `<span class="sub">${esc((c.urls&&c.urls[0]&&c.urls[0].reason)||'检测失败')}</span>`;
+    const tr=document.createElement('tr');
+    if(!ok) tr.className='dead';
+    tr.innerHTML=`<td class="sub">${i+1}</td><td>${logo}</td>`+
+      `<td><div class="name">${esc(c.name||'?')}</div>${c.ip_family?`<div class="sub">${esc(c.ip_family)}</div>`:''}</td>`+
+      `<td>${grp}</td><td>${lat}${flu}</td><td>${action}</td>`;
+    frag.appendChild(tr);
+  });
+  rows.innerHTML=''; rows.appendChild(frag);
+}
+
+load();
+</script>
+</body>
+</html>
