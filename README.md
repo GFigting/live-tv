@@ -81,6 +81,22 @@ python -m livetv serve --config config/sources.yaml
 - 源清单底部可手动添加源：填写「源名称」与「M3U 地址」后点「添加」或在地址框回车即可，地址需以 `http://` 或 `https://` 开头，重名会被拒绝；新源追加到 `sources` 段末尾并默认启用，同样在下次检测时生效。
 - 播放受源自身限制：没有跨域头或做了防盗链的源会在播放窗口里提示失败，属正常情况。
 
+## 静态快照与部署
+
+`scripts/build_static.py` 把最新报告内嵌进页面，生成不依赖服务端的静态目录：
+
+```powershell
+python scripts\build_static.py
+# 产出 dist/index.html（约 650 KB）与 dist/static/lib/hls.min.js
+```
+
+- 静态页自动进入只读模式：顶部提示「静态快照 · 数据生成于 …」，检测、复测、源清单编辑与产物下载全部隐藏，页面不发起任何 `/api/*` 请求。
+- 保留的能力：统计卡片、分组分布、频道表（含状态四色）、搜索与状态筛选、排序分页、失败清单、勾选导出 M3U、频道播放。
+- 播放改为直连源地址（静态站没有 `/proxy`），受源站跨域与防盗链限制，部分频道会提示失败。
+- 部署：把 `dist/` 整个目录上传到任意静态托管即可。国内首选腾讯云 EdgeOne Pages（免费额度，平台默认域名国内可直接访问、无需备案；绑定自定义域名并开中国大陆加速才需要 ICP 备案）。Gitee Pages 已下线，不适合。
+- 仓库自带 `.github/workflows/pages.yml`：`dist/` 有更新并推送到 `master` 时，由 Actions 直接发布到 GitHub Pages；国内访问不稳定，只作备用通道。
+- 快照是构建时的数据，源变化后需重新运行检测并重新构建；它只用于展示，不产生订阅产物。
+
 ## 分组与延迟口径
 
 - `group-title` 固定为 12 个大类，按台名特征与原始分类依次判定：央视 → 港澳台 → 卫视 → 地方 → 内容类型（新闻/影视/体育/少儿/纪录/音乐）→ 国际 → 其他。M3U 也按这个顺序排列，所以顺序本身有意义（央视在最前，其他在最后）。
@@ -179,12 +195,14 @@ schtasks /run /tn "live-tv weekly"
 
 ```text
 live-tv/
-├── config/sources.yaml     # 源清单与检测配置
-├── scripts/run-weekly.ps1  # 每周运行脚本（日志写入 output/）
-├── src/livetv/             # 采集、解析、检测、输出
-├── src/livetv/web/         # 本地查看页面与运行管理（静态 HTML + http.server）
-├── tests/                  # 单元测试
-└── output/                 # 运行产物（不入库）
+├── config/sources.yaml       # 源清单与检测配置
+├── scripts/run-weekly.ps1    # 每周运行脚本（日志写入 output/）
+├── scripts/build_static.py   # 生成内嵌报告快照的静态页（dist/）
+├── src/livetv/               # 采集、解析、检测、输出
+├── src/livetv/web/           # 本地查看页面与运行管理（静态 HTML + http.server）
+├── tests/                    # 单元测试
+├── dist/                     # 静态快照产物（可整体上传到静态托管）
+└── output/                   # 运行产物（不入库）
 ```
 
 ## 测试

@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
     paths:
-      - 'src/livetv/web/static/**'
+      - 'dist/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -29,8 +29,9 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # 控制台静态资源目录：index.html + lib/hls.min.js
-          path: src/livetv/web/static
+          # 静态快照目录：index.html（内嵌报告）+ lib/hls.min.js
+          # 由 scripts/build_static.py 本地构建后提交
+          path: dist
 
   deploy:
     needs: build

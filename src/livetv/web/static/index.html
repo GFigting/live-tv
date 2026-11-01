@@ -309,6 +309,22 @@ button.play:hover { background: var(--accent-dim); color: var(--text); }
 .player video { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
 .player-error { color: var(--warn); font-size: 12px; min-height: 16px; word-break: break-all; }
 .hidden { display: none; }
+/* 静态快照模式：隐藏所有依赖服务端的入口，只留浏览、筛选、导出与播放 */
+body.static #run-btn,
+body.static #progress,
+body.static #sources-card,
+body.static #downloads-block,
+body.static #retest-group,
+body.static #retest-failed,
+body.static #retest-page,
+body.static .retest,
+body.static .retest-url,
+body.static .retest-channel { display: none; }
+/* 静态模式只剩一条提示，运行卡片收缩成通知条 */
+body.static .grid-2 { display: block; }
+body.static #run-card h2,
+body.static #run-card .controls,
+body.static #run-card .shortcut-hint { display: none; }
 a.plain { color: var(--accent); text-decoration: none; }
 a.plain:hover { text-decoration: underline; }
 @media (max-width: 720px) {
@@ -333,7 +349,7 @@ a.plain:hover { text-decoration: underline; }
 </header>
 <main>
   <div class="grid-2">
-  <section class="card">
+  <section class="card" id="run-card">
     <h2>运行检测</h2>
     <div class="controls">
       <div class="field">
@@ -366,7 +382,7 @@ a.plain:hover { text-decoration: underline; }
     <div class="shortcut-hint">快捷键：<kbd>/</kbd> 聚焦筛选 · <kbd>Esc</kbd> 清除筛选或退出分组</div>
   </section>
 
-  <section class="card">
+  <section class="card" id="sources-card">
     <div class="toolbar">
       <h2 style="margin:0">源清单</h2>
       <span id="source-summary" class="hint"></span>
@@ -389,8 +405,10 @@ a.plain:hover { text-decoration: underline; }
       <button id="export-selected" class="ghost" disabled>导出选中</button>
       <button id="export-clear" class="ghost" disabled>清空选择</button>
     </div>
-    <h2 style="margin-top:22px">产物下载</h2>
-    <div id="downloads" class="downloads"><div class="empty">暂无产物</div></div>
+    <div id="downloads-block">
+      <h2 style="margin-top:22px">产物下载</h2>
+      <div id="downloads" class="downloads"><div class="empty">暂无产物</div></div>
+    </div>
   </section>
 
   <section id="stats" class="cards"></section>
@@ -471,6 +489,10 @@ const DOWNLOAD_LABELS = { m3u: "完整清单", ipv4: "IPv4 清单", ipv6: "IPv6 
 const GROUP_ORDER = ["央视", "卫视", "地方", "港澳台", "国际", "新闻", "影视", "体育", "少儿", "纪录", "音乐", "其他"];
 const PAGE_SIZE = 200;
 const POLL_INTERVAL = 1200;
+// 静态快照模式：构建脚本把报告塞进 #report-snapshot，此时页面不访问任何 /api/*
+const snapshotNode = document.getElementById("report-snapshot");
+const SNAPSHOT = snapshotNode ? JSON.parse(snapshotNode.textContent) : null;
+const STATIC_MODE = !!SNAPSHOT;
 
 let report = null;
 let timer = null;
@@ -1209,9 +1231,9 @@ document.addEventListener("keydown", (event) => {
     renderChannels();
   }
 });
-// 播放统一走本地代理，避开远程源的跨域限制
+// 播放统一走本地代理，避开远程源的跨域限制；静态快照没有代理，只能直连
 function playUrl(url) {
-  return "/proxy?url=" + encodeURIComponent(url);
+  return STATIC_MODE ? url : "/proxy?url=" + encodeURIComponent(url);
 }
 
 function closePlayer() {
@@ -1387,8 +1409,21 @@ document.getElementById("source-url").addEventListener("keydown", (event) => {
   if (event.key === "Enter") addSource();
 });
 
-loadSources();
-refresh();
+// 静态快照：直接渲染内嵌报告，不轮询任何后端接口
+if (STATIC_MODE) {
+  document.body.classList.add("static");
+  report = SNAPSHOT;
+  renderAll();
+  const pill = document.getElementById("status");
+  pill.textContent = "静态快照";
+  pill.className = "pill done";
+  document.getElementById("notice").textContent = "只读快照"
+    + (SNAPSHOT.generated_at ? " · 数据生成于 " + SNAPSHOT.generated_at : "")
+    + " · 检测、复测、源清单已禁用；筛选、导出与试播可用（试播为直连，受源站跨域限制）";
+} else {
+  loadSources();
+  refresh();
+}
 </script>
 </body>
 </html>
