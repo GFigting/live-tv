@@ -4,7 +4,11 @@ on:
   push:
     branches: [master]
     paths:
-      - 'dist/**'
+      - 'src/livetv/web/static/**'
+      - 'src/livetv/**'
+      - 'scripts/**'
+      - 'config/**'
+      - 'pyproject.toml'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -26,11 +30,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      # 在 CI 里用 Python 跑流水线：抓取并解析/合并源，产出 output/report.json
+      # --no-test 只做解析合并、不做逐条测速，稳定且快；
+      # 想要线上带流畅度评分，可去掉 --no-test（CI 更慢、流量更大）。
+      - name: Generate report
+        run: python -m livetv check --config config/sources.yaml --no-test
+
+      # 把报告塞进页面，生成只读快照静态站点到 dist/
+      - name: Build static snapshot
+        run: python scripts/build_static.py --report output/report.json --out dist
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # 静态快照目录：index.html（内嵌报告）+ lib/hls.min.js
-          # 由 scripts/build_static.py 本地构建后提交
           path: dist
 
   deploy:
