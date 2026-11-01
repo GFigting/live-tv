@@ -94,7 +94,11 @@ python scripts\build_static.py
 - 保留的能力：统计卡片、分组分布、频道表（含状态四色）、搜索与状态筛选、排序分页、失败清单、勾选导出 M3U、频道播放。
 - 播放改为直连源地址（静态站没有 `/proxy`），受源站跨域与防盗链限制，部分频道会提示失败。
 - 部署：把 `dist/` 整个目录上传到任意静态托管即可。国内首选腾讯云 EdgeOne Pages（免费额度，平台默认域名国内可直接访问、无需备案；绑定自定义域名并开中国大陆加速才需要 ICP 备案）。Gitee Pages 已下线，不适合。
-- 仓库自带 `.github/workflows/pages.yml`：`dist/` 有更新并推送到 `master` 时，由 Actions 直接发布到 GitHub Pages；国内访问不稳定，只作备用通道。
+- 仓库自带 `.github/workflows/pages.yml`：推送到 `master` 或每 6 小时定时触发 Actions，在 CI 里跑 `check`（**逐条检测，非仅解析**）→ `build_static.py` 产出 `dist/` → 发布到 GitHub Pages（国内访问不稳定，只作备用通道）。
+  - 在线演示（GitHub Pages，每晚自动重测刷新）：
+    - 控制台风貌（只读快照）：<https://gfigting.github.io/live-tv/>
+    - **Collect-IPTV 式监控页**（搜频道/分类/复制/看延迟）：<https://gfigting.github.io/live-tv/reference.html>
+    - **已检测可直接导入的 M3U**：<https://gfigting.github.io/live-tv/live.m3u>（VLC / TVBox / Kodi 粘贴即看）
 - 快照是构建时的数据，源变化后需重新运行检测并重新构建；它只用于展示，不产生订阅产物。
 
 ## 分组与延迟口径
